@@ -265,6 +265,6 @@ if __name__ == "__main__":
             plt.title(f"Degraded {i+1}")
             plt.axis("off")
         plt.tight_layout()
-        save_path = "results/degradation/sample.png"  # Change to your desired path
+        save_path = "results/degradation/sample01.png"  # Change to your desired path
         plt.savefig(save_path, dpi=300, bbox_inches="tight")
         plt.show()
