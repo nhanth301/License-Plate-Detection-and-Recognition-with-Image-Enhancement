@@ -37,12 +37,12 @@ class LPDegradationModel:
             img = self.apply_motion_blur(img)
         
         # Apply general degradations (Gaussian blur, noise)
-        # sigma = random.uniform(*self.gaussian_sigma_range)
-        # img = cv2.GaussianBlur(img, (0, 0), sigma)
+        sigma = random.uniform(*self.gaussian_sigma_range)
+        img = cv2.GaussianBlur(img, (0, 0), sigma)
         
-        # # Apply noise
-        # noise_level = random.uniform(*self.noise_level_range)
-        # img = self.apply_noise(img, noise_level)
+        # Apply noise
+        noise_level = random.uniform(*self.noise_level_range)
+        img = self.apply_noise(img, noise_level)
         
         return img
     
