@@ -152,75 +152,110 @@ class LPDegradationModel:
             
         return kernel
     
-    def apply_lighting_effect(self, img):
-        """Apply lighting effect to the image
+    def _generate_ambient_light_mask(self, shape):
+        """
+        Generate a uniform light mask for ambient light.
         
         Args:
-            img: Input image
-            
+            shape (tuple): Image shape (height, width, channels).
+        
         Returns:
-            lighted_img: Image with lighting effect applied
+            numpy.ndarray: Light mask with uniform intensity in [0.3, 1.0].
         """
-        # Convert image to HSV
-        img_hsv = cv2.cvtColor(img, cv2.COLOR_RGB2HSV)
-        h, w = img_hsv.shape[:2]
+        intensity = np.random.uniform(0.3, 0.7)  # Random intensity for practical effect
+        return np.full(shape[:2], intensity, dtype=np.float32)
+
+    def _generate_parallel_light_mask(self, shape):
+        """
+        Generate a light mask for parallel light with a directional gradient.
         
-        # Choose lighting effect type
-        light_type = random.choice(['ambient', 'parallel', 'spotlight'])
+        Args:
+            shape (tuple): Image shape (height, width, channels).
         
-        # Generate light mask based on the effect type
-        if light_type == 'ambient':
-            # Ambient light - uniform brightness
-            light_mask = np.ones((h, w), dtype=np.float32) if random.random() > 0.5 else np.zeros((h, w), dtype=np.float32)
+        Returns:
+            numpy.ndarray: Light mask with Gaussian attenuation along a direction.
+        """
+        height, width = shape[:2]
+        direction = np.random.choice(['horizontal', 'vertical'])
         
-        elif light_type == 'parallel':
-            # Parallel light - choose a direction
-            direction = random.choice(['top', 'bottom', 'left', 'right'])
-            sigma = min(h, w) / 4
-            
-            # Create coordinate matrices
-            y, x = np.ogrid[:h, :w]
-            
-            if direction == 'top':
-                d = y  # Distance from top
-            elif direction == 'bottom':
-                d = h - y - 1  # Distance from bottom
-            elif direction == 'left':
-                d = x  # Distance from left
+        if direction == 'horizontal':
+            side = np.random.choice(['left', 'right'])
+            if side == 'left':
+                d = np.arange(width)  # Distance increases from left to right
             else:  # right
-                d = w - x - 1  # Distance from right
-                
-            # Vectorized computation of light mask
-            light_mask = np.exp(-((d) ** 2) / (sigma ** 2))
+                d = width - 1 - np.arange(width)  # Distance decreases from left to right
+            sigma = width / 1.5  # Gaussian spread based on image width
+            mask_1d = np.exp(-d**2 / sigma**2)  # Gaussian attenuation
+            mask = np.tile(mask_1d, (height, 1))  # Repeat across rows
+        else:  # vertical
+            side = np.random.choice(['top', 'bottom'])
+            if side == 'top':
+                d = np.arange(height)  # Distance increases from top to bottom
+            else:  # bottom
+                d = height - 1 - np.arange(height)  # Distance decreases from top to bottom
+            sigma = height / 1.5  # Gaussian spread based on image height
+            mask_1d = np.exp(-d**2 / sigma**2)  # Gaussian attenuation
+            mask = np.tile(mask_1d[:, np.newaxis], (1, width))  # Repeat across columns
         
-        elif light_type == 'spotlight':
-            # Spotlight - choose a center point
-            center_y = random.randint(0, h-1)
-            center_x = random.randint(0, w-1)
-            sigma = min(h, w) / 4
-            
-            # Create coordinate matrices
-            y, x = np.ogrid[:h, :w]
-            d = np.sqrt((y - center_y) ** 2 + (x - center_x) ** 2)
-            
-            # Vectorized computation of light mask
-            light_mask = np.exp(-((d) ** 2) / (sigma ** 2))
+        return mask.astype(np.float32)
+
+    def _generate_spotlight_mask(self, shape):
+        """
+        Generate a light mask for spotlight with radial attenuation.
         
-        # Adjust brightness by modifying the V channel
-        brightness_weight = random.uniform(*self.brightness_weight_range)
-        v_channel = img_hsv[:, :, 2].astype(np.float32)
+        Args:
+            shape (tuple): Image shape (height, width, channels).
         
-        # Apply light mask
-        if random.random() > 0.5:  # Brighten
-            v_channel = v_channel * (1 - brightness_weight) + light_mask * 255 * brightness_weight
-        else:  # Darken
-            v_channel = v_channel * (1 - brightness_weight) + (1 - light_mask) * 255 * brightness_weight
+        Returns:
+            numpy.ndarray: Light mask with Gaussian attenuation from a point.
+        """
+        height, width = shape[:2]
+        # Random light source position
+        x0 = np.random.randint(0, width)
+        y0 = np.random.randint(0, height)
+        # Create coordinate grid
+        i, j = np.mgrid[0:height, 0:width]
+        # Compute radial distance from light source
+        d = np.sqrt((i - y0)**2 + (j - x0)**2)
+        sigma = max(width, height) / 1.5  # Gaussian spread based on max dimension
+        mask = np.exp(-d**2 / sigma**2)  # Gaussian attenuation
+        return mask.astype(np.float32)
+
+    def apply_lighting_effect(self, image):
+        """
+        Apply a random lighting effect (ambient, parallel, or spotlight) to an image.
         
-        # Clip values
-        img_hsv[:, :, 2] = np.clip(v_channel, 0, 255).astype(np.uint8)
+        Args:
+            image (numpy.ndarray): Input RGB image with shape (height, width, 3) and dtype uint8.
+        
+        Returns:
+            numpy.ndarray: Output RGB image with lighting effect applied.
+        """
+        # Randomly select a lighting effect
+        effect = np.random.choice(['ambient', 'parallel', 'spotlight'])
+        
+        # Generate the corresponding light mask
+        if effect == 'ambient':
+            light_mask = self._generate_ambient_light_mask(image.shape)
+        elif effect == 'parallel':
+            light_mask = self._generate_parallel_light_mask(image.shape)
+        else:  # spotlight
+            light_mask = self._generate_spotlight_mask(image.shape)
+        
+        # Convert image to HSV color space
+        hsv_image = cv2.cvtColor(image, cv2.COLOR_RGB2HSV)
+        
+        # Apply light mask to the V channel
+        v_channel = hsv_image[:, :, 2].astype(np.float32)  # Convert to float for multiplication
+        v_channel = (v_channel * light_mask).clip(0, 255).astype(np.uint8)  # Apply mask and clip
+        
+        # Update the V channel in the HSV image
+        hsv_image[:, :, 2] = v_channel
         
         # Convert back to RGB
-        return cv2.cvtColor(img_hsv, cv2.COLOR_HSV2RGB)
+        result_image = cv2.cvtColor(hsv_image, cv2.COLOR_HSV2RGB)
+        
+        return result_image
 
 
 def batch_process_degradations(hr_image, num_variations=10):
