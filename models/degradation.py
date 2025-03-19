@@ -262,9 +262,10 @@ if __name__ == "__main__":
         for i in range(10):
             plt.subplot(3, 4, i + 2)
             plt.imshow(degraded_images[i])
+            print(degraded_images[i].shape)
             plt.title(f"Degraded {i+1}")
             plt.axis("off")
         plt.tight_layout()
         save_path = "results/degradation/sample01.png"  # Change to your desired path
-        plt.savefig(save_path, dpi=300, bbox_inches="tight")
+        # plt.savefig(save_path, dpi=300, bbox_inches="tight")
         plt.show()
