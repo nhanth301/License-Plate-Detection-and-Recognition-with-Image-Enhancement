@@ -1,9 +1,14 @@
+
 import numpy as np
 import cv2
 from scipy.ndimage import gaussian_filter
 import random
 import math
+
+import matplotlib
+matplotlib.use('Agg')  # or 'Qt5Agg' if you have Qt installed
 import matplotlib.pyplot as plt
+
 
 class LPDegradationModel:
     def __init__(self):
@@ -27,8 +32,8 @@ class LPDegradationModel:
         img = hr_image.copy()
         
         # Apply domain-specific degradations (lighting and motion blur)
-        apply_lighting = random.random() > 0.5
-        apply_motion_blur = random.random() > 0.5
+        apply_lighting = random.random() > 0.7
+        apply_motion_blur = random.random() > 0.7
         
         if apply_lighting:
             img = self.apply_lighting_effect(img)
@@ -39,12 +44,46 @@ class LPDegradationModel:
         # Apply general degradations (Gaussian blur, noise)
         sigma = random.uniform(*self.gaussian_sigma_range)
         img = cv2.GaussianBlur(img, (0, 0), sigma)
-        
+        img = self.scale_down(img, 0.5)
         # Apply noise
         noise_level = random.uniform(*self.noise_level_range)
         img = self.apply_noise(img, noise_level)
-        
+
         return img
+
+    def scale_down(self, img, scale_factor, interpolation="bicubic"):
+        """
+        Scales down an image using a specified interpolation method.
+
+        Args:
+            img (numpy.ndarray): Input image.
+            scale_factor (float): Factor by which to downscale (must be < 1.0).
+            interpolation (str): Interpolation method: 'bicubic', 'bilinear', or 'nearest'.
+
+        Returns:
+            downscaled_img (numpy.ndarray): Downscaled image.
+        """
+        if scale_factor >= 1.0 or scale_factor <= 0:
+            raise ValueError("Scale factor must be between 0 and 1 (e.g., 0.5 for 50% reduction).")
+
+        # Define interpolation methods
+        interpolation_methods = {
+            "bicubic": cv2.INTER_CUBIC,
+            "bilinear": cv2.INTER_LINEAR,
+            "nearest": cv2.INTER_NEAREST
+        }
+
+        if interpolation not in interpolation_methods:
+            raise ValueError("Invalid interpolation method. Choose from 'bicubic', 'bilinear', or 'nearest'.")
+
+        # Compute new (downscaled) size
+        new_size = (int(img.shape[1] * scale_factor), int(img.shape[0] * scale_factor))
+
+        # Downscale the image using the selected interpolation method
+        downscaled_img = cv2.resize(img, new_size, interpolation=interpolation_methods[interpolation])
+
+        return downscaled_img
+
     
     def apply_noise(self, img, noise_level):
         """Add random noise to the image - vectorized implementation
@@ -285,22 +324,25 @@ if __name__ == "__main__":
         print("Error: Could not load image")
     else:
         hr_image_rgb = cv2.cvtColor(hr_image, cv2.COLOR_BGR2RGB)
-        degraded_images = batch_process_degradations(hr_image_rgb, 10)
+        degraded_images = batch_process_degradations(hr_image_rgb, 24)
 
-        plt.figure(figsize=(15, 8))
+        plt.figure(figsize=(20, 20))  # Increased figure size for better visibility
 
-        plt.subplot(3, 4, 1)
+        # Plot the original HR image
+        plt.subplot(5, 5, 1)  # 5x5 grid, position 1
         plt.imshow(hr_image_rgb)
         plt.title("Original HR Image")
         plt.axis("off")
 
-        for i in range(10):
-            plt.subplot(3, 4, i + 2)
+        # Plot 20 degraded images
+        for i in range(24):  # Changed from 10 to 20
+            plt.subplot(5, 5, i + 2)  # Start at position 2 (after HR image)
             plt.imshow(degraded_images[i])
             print(degraded_images[i].shape)
             plt.title(f"Degraded {i+1}")
             plt.axis("off")
+
         plt.tight_layout()
-        save_path = "results/degradation/sample01.png"  # Change to your desired path
-        # plt.savefig(save_path, dpi=300, bbox_inches="tight")
-        plt.show()
+        save_path = "results/degradation/degradation_plot.png"  # Save path unchanged
+        plt.savefig(save_path, dpi=300, bbox_inches="tight")
+        plt.close()
