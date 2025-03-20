@@ -20,9 +20,9 @@ class LPDegradationModel:
         Initialize the degradation model with hyperparameter ranges.
         All ranges are set to ensure reasonable degradation effects while output remains in [0,1] via clipping.
         """
-        self.gaussian_sigma_range = (2.0, 3.0)  # Sigma range for Gaussian blur intensity
-        self.noise_level_range = (0.01, 0.015)   # Noise standard deviation range
-        self.motion_blur_kernel_size_range = (7, 13)  # Kernel size range for motion blur
+        self.gaussian_sigma_range = (4.0, 6.0)  # Sigma range for Gaussian blur intensity
+        self.noise_level_range = (0.01, 0.05)   # Noise standard deviation range
+        self.motion_blur_kernel_size_range = (17, 23)  # Kernel size range for motion blur
         self.brightness_weight_range = (0.3, 0.7)  # Intensity range for lighting effects
     
     def apply_degradation(self, hr_image):
@@ -50,7 +50,7 @@ class LPDegradationModel:
         img = np.clip(cv2.GaussianBlur(img, (0, 0), sigma), 0, 1)
         
         # Scale down the image
-        img = self.scale_down(img, 0.4)
+        img = self.scale_down(img, 0.25)
         
         # Add noise with random level
         noise_level = random.uniform(*self.noise_level_range)
@@ -263,7 +263,7 @@ if __name__ == "__main__":
     os.makedirs(output_dir, exist_ok=True)  # Create directory if it doesn't exist
 
     # Load the high-resolution image
-    hr_image = cv2.imread("data/test/sub_2nd_20m_M09_D28_C166_14A74506_0.62_1693306799412.png")
+    hr_image = cv2.imread("/home/anhnh/Downloads/ccpd_cropped/val/浙E3Z933.jpg")
     if hr_image is None:
         print("Error: Could not load image")
     else:
