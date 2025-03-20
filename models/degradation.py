@@ -15,16 +15,16 @@ class LPDegradationModel:
     A class to simulate low-resolution images by applying degradations to high-resolution images.
     Degradations include lighting effects, motion blur, Gaussian blur, scaling, and noise.
     """
-    def __init__(self):
+    def __init__(self, gaussian_sigma_range=(4.0, 6.0), noise_level_range=(0.01, 0.05), motion_blur_kernel_size_range=(17, 23), brightness_weight_range=(0.3, 0.7), lr_size=(96,32)):
         """
         Initialize the degradation model with hyperparameter ranges.
         All ranges are set to ensure reasonable degradation effects while output remains in [0,1] via clipping.
         """
-        self.gaussian_sigma_range = (4.0, 6.0)  # Sigma range for Gaussian blur intensity
-        self.noise_level_range = (0.01, 0.05)   # Noise standard deviation range
-        self.motion_blur_kernel_size_range = (17, 23)  # Kernel size range for motion blur
-        self.brightness_weight_range = (0.3, 0.7)  # Intensity range for lighting effects
-    
+        self.gaussian_sigma_range = gaussian_sigma_range  # Sigma range for Gaussian blur intensity
+        self.noise_level_range = noise_level_range   # Noise standard deviation range
+        self.motion_blur_kernel_size_range = motion_blur_kernel_size_range  # Kernel size range for motion blur
+        self.brightness_weight_range = brightness_weight_range  # Intensity range for lighting effects
+        self.lr_size = lr_size
     def apply_degradation(self, hr_image):
         """
         Apply a fixed sequence of degradations to the input high-resolution image.
@@ -56,7 +56,7 @@ class LPDegradationModel:
         noise_level = random.uniform(*self.noise_level_range)
         img = self.apply_noise(img, noise_level)
         
-        return np.clip(img, 0, 1)  # Ensure final output is in [0,1]
+        return cv2.resize(np.clip(img, 0, 1),self.lr_size)  # Ensure final output is in [0,1]
 
     def scale_down(self, img, scale_factor, interpolation="bicubic"):
         """
@@ -287,7 +287,7 @@ if __name__ == "__main__":
         # Optional: Create and save the visualization plot
         plt.figure(figsize=(20, 20))
         plt.subplot(5, 5, 1)
-        plt.imshow(hr_image_rgb)
+        plt.imshow(cv2.resize(hr_image_rgb,(96,32)))
         plt.title("Original HR Image")
         plt.axis("off")
         for i in range(24):
