@@ -8,7 +8,7 @@ import math
 import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
-from utils.utils_image import uint2single
+from utils.utils_image import uint2single, single2uint
 
 class LPDegradationModel:
     """
@@ -20,14 +20,14 @@ class LPDegradationModel:
         Initialize the degradation model with hyperparameter ranges.
         All ranges are set to ensure reasonable degradation effects while output remains in [0,1] via clipping.
         """
-        self.gaussian_sigma_range = (0.5, 2.0)  # Sigma range for Gaussian blur intensity
-        self.noise_level_range = (0.01, 0.05)   # Noise standard deviation range
-        self.motion_blur_kernel_size_range = (5, 15)  # Kernel size range for motion blur
+        self.gaussian_sigma_range = (2.0, 3.0)  # Sigma range for Gaussian blur intensity
+        self.noise_level_range = (0.01, 0.015)   # Noise standard deviation range
+        self.motion_blur_kernel_size_range = (7, 13)  # Kernel size range for motion blur
         self.brightness_weight_range = (0.3, 0.7)  # Intensity range for lighting effects
     
     def apply_degradation(self, hr_image):
         """
-        Apply a random sequence of degradations to the input high-resolution image.
+        Apply a fixed sequence of degradations to the input high-resolution image.
 
         Args:
             hr_image (numpy.ndarray): High-resolution image with values in [0,1].
@@ -36,25 +36,26 @@ class LPDegradationModel:
             numpy.ndarray: Degraded image with values clipped to [0,1].
         """
         img = hr_image.copy()
-        degradations = []
-        # Randomly apply lighting effect with 30% probability
+        
+        # Apply lighting effect with 70% probability
         if random.random() > 0.7:
-            degradations.append(lambda img: self.apply_lighting_effect(img))
-        # Randomly apply motion blur with 30% probability
+            img = self.apply_lighting_effect(img)
+        
+        # Apply motion blur with 70% probability
         if random.random() > 0.7:
-            degradations.append(lambda img: self.apply_motion_blur(img))
-        # Always apply Gaussian blur with random sigma
+            img = self.apply_motion_blur(img)
+        
+        # Apply Gaussian blur with random sigma
         sigma = random.uniform(*self.gaussian_sigma_range)
-        degradations.append(lambda img: np.clip(cv2.GaussianBlur(img, (0, 0), sigma), 0, 1))
-        # Always scale down the image
-        degradations.append(lambda img: self.scale_down(img, 0.5))
-        # Always add noise with random level
+        img = np.clip(cv2.GaussianBlur(img, (0, 0), sigma), 0, 1)
+        
+        # Scale down the image
+        img = self.scale_down(img, 0.4)
+        
+        # Add noise with random level
         noise_level = random.uniform(*self.noise_level_range)
-        degradations.append(lambda img: self.apply_noise(img, noise_level))
-        # Shuffle the order of degradations for variety
-        random.shuffle(degradations)
-        for degradation in degradations:
-            img = degradation(img)
+        img = self.apply_noise(img, noise_level)
+        
         return np.clip(img, 0, 1)  # Ensure final output is in [0,1]
 
     def scale_down(self, img, scale_factor, interpolation="bicubic"):
@@ -258,15 +259,32 @@ def batch_process_degradations(hr_image, num_variations=10):
     return degraded_images
 
 if __name__ == "__main__":
-    """
-    Main block to load an image, apply degradations, and save a visualization plot.
-    """
+    output_dir = "results/degradation/images"
+    os.makedirs(output_dir, exist_ok=True)  # Create directory if it doesn't exist
+
+    # Load the high-resolution image
     hr_image = cv2.imread("data/test/sub_2nd_20m_M09_D28_C166_14A74506_0.62_1693306799412.png")
     if hr_image is None:
         print("Error: Could not load image")
     else:
-        hr_image_rgb = uint2single(cv2.cvtColor(hr_image, cv2.COLOR_BGR2RGB))  # Convert to [0,1] RGB
+        # Convert to RGB and [0,1] float range
+        hr_image_rgb = uint2single(cv2.cvtColor(hr_image, cv2.COLOR_BGR2RGB))
+        
+        # Generate 24 degraded versions
         degraded_images = batch_process_degradations(hr_image_rgb, 24)
+
+        # Save the original HR image
+        hr_image_uint8 = single2uint(hr_image_rgb)  # Convert [0,1] float to [0,255] uint8
+        cv2.imwrite(os.path.join(output_dir, "original_hr_image.png"), cv2.cvtColor(hr_image_uint8, cv2.COLOR_RGB2BGR))
+
+        # Save each degraded image
+        for i, degraded_img in enumerate(degraded_images):
+            degraded_img_uint8 = single2uint(degraded_img)  # Convert [0,1] float to [0,255] uint8
+            filename = os.path.join(output_dir, f"degraded_{i+1:02d}.png")
+            cv2.imwrite(filename, cv2.cvtColor(degraded_img_uint8, cv2.COLOR_RGB2BGR))
+            print(f"Saved {filename} with shape {degraded_img.shape}")
+
+        # Optional: Create and save the visualization plot
         plt.figure(figsize=(20, 20))
         plt.subplot(5, 5, 1)
         plt.imshow(hr_image_rgb)
@@ -275,7 +293,6 @@ if __name__ == "__main__":
         for i in range(24):
             plt.subplot(5, 5, i + 2)
             plt.imshow(degraded_images[i])
-            print(degraded_images[i].shape)
             plt.title(f"Degraded {i+1}")
             plt.axis("off")
         plt.tight_layout()
