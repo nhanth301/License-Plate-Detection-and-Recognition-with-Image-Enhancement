@@ -4,12 +4,14 @@ from PIL import Image
 import argparse
 import os 
 import sys
+from loguru import logger
+
 sys.path.append(os.path.abspath('../models'))
 from base_sp_lpr import LPSR  
 
 
 def load_image(image_path):
-    image = Image.open(image_path).convert("RGB")
+    image = Image.open(image_path).convert("RGB").resize((96, 32), Image.BICUBIC)
     transform = T.Compose([
         T.ToTensor(),  # [0, 1]
     ])
@@ -40,16 +42,16 @@ def main(args):
     if args.checkpoint and os.path.exists(args.checkpoint):
         checkpoint = torch.load(args.checkpoint, map_location=device)
         model.load_state_dict(checkpoint)
-        print(f"Loaded checkpoint from {args.checkpoint}")
+        logger.info(f"Loaded checkpoint from {args.checkpoint}")
     else:
-        print("No checkpoint loaded, using randomly initialized weights.")
+        logger.warning("No checkpoint loaded, using randomly initialized weights.")
 
     model.eval()
     with torch.no_grad():
         output = model(input_image)
 
     save_image(output, args.output)
-    print(f"Saved output image to {args.output}")
+    logger.info(f"Saved output image to {args.output}")
 
 def parse_opt():
     parser = argparse.ArgumentParser()
@@ -65,7 +67,6 @@ def parse_opt():
     args = parser.parse_args()
     return args
 
-args = parse_opt()
 if __name__ == "__main__":
     args = parse_opt()
     main(args)
