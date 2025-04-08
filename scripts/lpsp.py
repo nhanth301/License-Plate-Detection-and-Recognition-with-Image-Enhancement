@@ -1,58 +1,71 @@
 import torch
-import torch.nn as nn
-from torchvision import transforms
+import torchvision.transforms as T
 from PIL import Image
-import matplotlib.pyplot as plt
-import sys 
-import os
+import argparse
+import os 
+import sys
 sys.path.append(os.path.abspath('../models'))
-from base_sp_lpr import LPSR
+from base_sp_lpr import LPSR  
 
 
-
-# ----- Load model -----
-model = LPSR(num_channels=3, num_features=124, growth_rate=64, num_blocks=8, num_layers=4, scale_factor=2)
-model.load_state_dict(torch.load("../weights/best_model.pth", map_location=torch.device("cpu")))
-model.eval()
-
-# ----- Hàm tiền xử lý ảnh -----
-def preprocess_image(image_path):
-    img = Image.open(image_path).convert("RGB").resize((96, 32))  # Đảm bảo ảnh có kích thước 128x128
-    # Chuyển đổi ảnh thành tensor
-    transform = transforms.Compose([
-        transforms.ToTensor(),  # scale về [0, 1]
+def load_image(image_path):
+    image = Image.open(image_path).convert("RGB")
+    transform = T.Compose([
+        T.ToTensor(),  # [0, 1]
     ])
-    img_tensor = transform(img).unsqueeze(0)  # thêm batch dimension
-    return img_tensor, img
+    return transform(image).unsqueeze(0)  # shape: [1, C, H, W]
 
-# ----- Hàm hậu xử lý ảnh -----
-def postprocess_image(tensor):
-    tensor = tensor.squeeze(0).clamp(0, 1)  # bỏ batch dim và giới hạn giá trị
-    img = transforms.ToPILImage()(tensor)
-    return img
+def save_image(tensor, output_path):
+    tensor = tensor.squeeze(0).detach().cpu().clamp(0, 1)
+    to_pil = T.ToPILImage()
+    image = to_pil(tensor)
+    image.save(output_path)
 
-# ----- Inference -----
-def infer(image_path):
-    input_tensor, original_image = preprocess_image(image_path)
+def main(args):
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+    # Load image
+    input_image = load_image(args.input).to(device)
+
+    # Load model
+    model = LPSR(
+        num_channels=3,
+        num_features=args.num_features,
+        growth_rate=args.growth_rate,
+        num_blocks=args.num_blocks,
+        num_layers=args.num_layers,
+        scale_factor=args.scale
+    ).to(device)
+
+    if args.checkpoint and os.path.exists(args.checkpoint):
+        checkpoint = torch.load(args.checkpoint, map_location=device)
+        model.load_state_dict(checkpoint)
+        print(f"Loaded checkpoint from {args.checkpoint}")
+    else:
+        print("No checkpoint loaded, using randomly initialized weights.")
+
+    model.eval()
     with torch.no_grad():
-        output_tensor = model(input_tensor)
+        output = model(input_image)
 
-    output_image = postprocess_image(output_tensor)
-    print(output_image.size)
-    output_image.save('new_image.png')  # Lưu ảnh đầu ra    
-    # Hiển thị ảnh trước và sau
-    plt.figure(figsize=(10, 5))
-    plt.subplot(1, 2, 1)
-    plt.title("Input")
-    plt.imshow(original_image)
-    plt.axis("off")
+    save_image(output, args.output)
+    print(f"Saved output image to {args.output}")
 
-    plt.subplot(1, 2, 2)
-    plt.title("Super-resolved Output")
-    plt.imshow(output_image)
-    plt.axis("off")
+def parse_opt():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--input", type=str, required=True, help="Path to input image")
+    parser.add_argument("--output", type=str, default="output.png", help="Path to save output image")
+    parser.add_argument("--checkpoint", type=str, default=None, help="Path to model checkpoint (.pth)")
+    parser.add_argument("--scale", type=int, default=2, help="Upscaling factor (e.g., 2, 4)")
+    parser.add_argument("--num_features", type=int, default=124)
+    parser.add_argument("--growth_rate", type=int, default=64)
+    parser.add_argument("--num_blocks", type=int, default=8)
+    parser.add_argument("--num_layers", type=int, default=4)
 
-    plt.show()
+    args = parser.parse_args()
+    return args
 
-# ----- Gọi hàm inference -----
-infer("../data/test/plate_image copy 3.png_8.jpg")  # Thay bằng đường dẫn ảnh thật
+args = parse_opt()
+if __name__ == "__main__":
+    args = parse_opt()
+    main(args)
