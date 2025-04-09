@@ -1,43 +1,60 @@
 import torch
 import torch.nn as nn
-import math
 import torch.nn.functional as F
+import math
+
 
 class DenseLayer(nn.Module):
-    def __init__(self, in_channelss, out_channels, bias=True):
+    """
+    A single dense layer used in Residual Dense Blocks (RDB).
+    Each layer performs convolution followed by ReLU and concatenates the output with the input.
+    """
+    def __init__(self, in_channels, out_channels, bias=True):
         super(DenseLayer, self).__init__()
-        self.conv = nn.Conv2d(in_channelss, out_channels, kernel_size=(3, 3), padding="same", bias=bias)
-        self.ReLU = nn.ReLU(inplace=True)
-
+        self.conv = nn.Conv2d(in_channels, out_channels, kernel_size=3, padding="same", bias=bias)
+        self.relu = nn.ReLU(inplace=True)
 
     def forward(self, x):
-        return torch.cat([x, self.ReLU(self.conv(x))], 1)
+        return torch.cat([x, self.relu(self.conv(x))], dim=1)
 
 
 class RDB(nn.Module):
-    def __init__(self, in_channelss, growth_rate, num_layers, bias=True):
+    """
+    Residual Dense Block.
+    Contains a series of DenseLayers and a 1x1 convolution to fuse features, followed by residual connection.
+    """
+    def __init__(self, in_channels, growth_rate, num_layers, bias=True):
         super(RDB, self).__init__()
-        self.layers = nn.Sequential(*[DenseLayer(in_channelss + growth_rate * i, growth_rate, bias=bias) for i in range(num_layers)])
-        self.lff = nn.Conv2d(in_channelss + growth_rate * num_layers, in_channelss, kernel_size=1, bias=bias)
-        self.alpha = nn.Parameter(torch.tensor(1.0))
+        self.layers = nn.Sequential(
+            *[DenseLayer(in_channels + growth_rate * i, growth_rate, bias=bias) for i in range(num_layers)]
+        )
+        self.lff = nn.Conv2d(in_channels + growth_rate * num_layers, in_channels, kernel_size=1, bias=bias)
+        self.alpha = nn.Parameter(torch.tensor(1.0))  # learnable residual weight
+
     def forward(self, x):
         return x + self.alpha * self.lff(self.layers(x))
 
+
 class RDN(nn.Module):
+    """
+    Residual Dense Network for feature extraction.
+    Contains shallow feature extraction, a series of RDBs, and a global feature fusion (GFF) module.
+    """
     def __init__(self, num_channels, num_features, growth_rate, num_blocks, num_layers, bias=True):
         super(RDN, self).__init__()
         self.num_blocks = num_blocks
 
         self.shallowF1 = nn.Conv2d(num_channels, num_features, kernel_size=7, padding="same", bias=bias)
         self.shallowF2 = nn.Conv2d(num_features, num_features, kernel_size=7, padding="same", bias=bias)
-        self.rdbs = nn.ModuleList()
-        for _ in range(num_blocks):
-            self.rdbs.append(RDB(num_features, growth_rate, num_layers))
+
+        self.rdbs = nn.ModuleList(
+            [RDB(num_features, growth_rate, num_layers, bias=bias) for _ in range(num_blocks)]
+        )
 
         self.gff = nn.Sequential(
-            nn.Conv2d(num_features*num_blocks, num_features, kernel_size=1, bias=bias),
+            nn.Conv2d(num_features * num_blocks, num_features, kernel_size=1, bias=bias),
             nn.Conv2d(num_features, num_features, kernel_size=3, padding="same", bias=bias)
-            )
+        )
 
     def forward(self, x):
         sfe1 = self.shallowF1(x)
@@ -49,11 +66,15 @@ class RDN(nn.Module):
             x = self.rdbs[i](x)
             local_features.append(x)
 
-        x = self.gff(torch.cat(local_features, 1)) + sfe1
-
+        x = self.gff(torch.cat(local_features, dim=1)) + sfe1
         return x
 
+
 class ChannelAttention(nn.Module):
+    """
+    Channel Attention mechanism using squeeze-and-excitation.
+    Enhances the most informative feature maps.
+    """
     def __init__(self, channels_in):
         super(ChannelAttention, self).__init__()
         self.block = nn.Sequential(
@@ -70,20 +91,20 @@ class ChannelAttention(nn.Module):
         out = self.block(x)
         return x * out
 
+
 class UpScaling(nn.Module):
+    """
+    Upscaling block that increases spatial resolution by a given scale factor.
+    Uses PixelShuffle for upsampling.
+    """
     def __init__(self, channels_in, scale_factor):
         super(UpScaling, self).__init__()
         num_stages = int(math.log2(scale_factor))
         layers = []
+
         for _ in range(num_stages):
             layers.append(
-                nn.Conv2d(
-                    in_channels=channels_in,
-                    out_channels=channels_in * 4,
-                    kernel_size=3,
-                    stride=1,
-                    padding=1,
-                )
+                nn.Conv2d(channels_in, channels_in * 4, kernel_size=3, stride=1, padding=1)
             )
             layers.append(nn.ReLU(inplace=True))
             layers.append(nn.PixelShuffle(upscale_factor=2))
@@ -93,7 +114,12 @@ class UpScaling(nn.Module):
     def forward(self, x):
         return self.upscale(x)
 
+
 class LPSR(nn.Module):
+    """
+    Lightweight Progressive Super-Resolution (LPSR) model.
+    Combines residual dense blocks, channel attention, and pixel shuffle-based upsampling.
+    """
     def __init__(self, num_channels, num_features, growth_rate, num_blocks, num_layers, scale_factor):
         super(LPSR, self).__init__()
         self.in_conv = nn.Conv2d(
@@ -118,4 +144,4 @@ class LPSR(nn.Module):
         x = self.ca(x)
         x = self.upscale(x)
         x = self.final_conv(x)
-        return F.sigmoid(x)
+        return torch.sigmoid(x)

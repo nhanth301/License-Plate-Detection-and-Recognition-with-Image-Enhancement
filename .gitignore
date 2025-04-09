@@ -1,4 +1,8 @@
 .venv
 /data
 results
+__pycache__/
+.results
+*.pyc
+new_legible
 __pycache__

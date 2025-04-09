@@ -5,8 +5,6 @@ import numpy as np
 import cv2
 import random
 import math
-import matplotlib
-matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 from utils.utils_image import uint2single, single2uint
 
@@ -50,7 +48,7 @@ class LPDegradationModel:
         img = np.clip(cv2.GaussianBlur(img, (0, 0), sigma), 0, 1)
         
         # Scale down the image
-        img = self.scale_down(img, 0.25)
+        img = self.scale_down(img, 0.5)
         
         # Add noise with random level
         noise_level = random.uniform(*self.noise_level_range)
@@ -239,62 +237,3 @@ class LPDegradationModel:
         hsv_image[:, :, 2] = v_channel
         result_image = cv2.cvtColor(hsv_image, cv2.COLOR_HSV2RGB)
         return np.clip(result_image, 0, 1)  # Clip final RGB output
-
-def batch_process_degradations(hr_image, num_variations=10):
-    """
-    Generate multiple degraded versions of the input image.
-
-    Args:
-        hr_image (numpy.ndarray): High-resolution image in [0,1].
-        num_variations (int): Number of degraded images to generate.
-
-    Returns:
-        list: List of degraded images.
-    """
-    degradation_model = LPDegradationModel()
-    degraded_images = []
-    for _ in range(num_variations):
-        lr_image = degradation_model.apply_degradation(hr_image)
-        degraded_images.append(lr_image)
-    return degraded_images
-
-if __name__ == "__main__":
-    output_dir = "results/degradation/images"
-    os.makedirs(output_dir, exist_ok=True)  # Create directory if it doesn't exist
-
-    # Load the high-resolution image
-    hr_image = cv2.imread("/home/anhnh/Downloads/ccpd_cropped/val/浙E3Z933.jpg")
-    if hr_image is None:
-        print("Error: Could not load image")
-    else:
-        # Convert to RGB and [0,1] float range
-        hr_image_rgb = uint2single(cv2.cvtColor(hr_image, cv2.COLOR_BGR2RGB))
-        
-        # Generate 24 degraded versions
-        degraded_images = batch_process_degradations(hr_image_rgb, 24)
-
-        # Save the original HR image
-        hr_image_uint8 = single2uint(hr_image_rgb)  # Convert [0,1] float to [0,255] uint8
-        cv2.imwrite(os.path.join(output_dir, "original_hr_image.png"), cv2.cvtColor(hr_image_uint8, cv2.COLOR_RGB2BGR))
-
-        # Save each degraded image
-        for i, degraded_img in enumerate(degraded_images):
-            degraded_img_uint8 = single2uint(degraded_img)  # Convert [0,1] float to [0,255] uint8
-            filename = os.path.join(output_dir, f"degraded_{i+1:02d}.png")
-            cv2.imwrite(filename, cv2.cvtColor(degraded_img_uint8, cv2.COLOR_RGB2BGR))
-            print(f"Saved {filename} with shape {degraded_img.shape}")
-
-        # Optional: Create and save the visualization plot
-        plt.figure(figsize=(20, 20))
-        plt.subplot(5, 5, 1)
-        plt.imshow(cv2.resize(hr_image_rgb,(96,32)))
-        plt.title("Original HR Image")
-        plt.axis("off")
-        for i in range(24):
-            plt.subplot(5, 5, i + 2)
-            plt.imshow(degraded_images[i])
-            plt.title(f"Degraded {i+1}")
-            plt.axis("off")
-        plt.tight_layout()
-        plt.savefig("results/degradation/degradation_plot.png", dpi=300, bbox_inches="tight")
-        plt.close()
