@@ -8,11 +8,11 @@ from models.degradation import LPDegradationModel
 import numpy as np
 from tqdm import tqdm
 import logging
-
+from utils.utils_image import uint2single, single2uint
 # Configure logging
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
-def create_lr(input_path, output_path):
+def create_lr(input_path, output_path, nums=10):
     """
     Creates low-resolution (LR) and high-resolution (HR) image pairs.
 
@@ -25,7 +25,12 @@ def create_lr(input_path, output_path):
     os.makedirs(hr_output_dir, exist_ok=True)
     os.makedirs(lr_output_dir, exist_ok=True)
 
-    degradation = LPDegradationModel()
+    degradation = LPDegradationModel(gaussian_sigma_range=(0.3, 1.0), 
+                                     noise_level_range=(0.01, 0.05), 
+                                     motion_blur_kernel_size_range=(5, 13), 
+                                     brightness_weight_range=(0.3, 0.7), 
+                                     lr_size=(128,32),
+                                     scale=0.3)
 
     if os.path.isdir(input_path):
         filenames = [f for f in os.listdir(input_path) if f.lower().endswith(('.png', '.jpg', '.jpeg', '.bmp', '.tiff'))]
@@ -39,11 +44,18 @@ def create_lr(input_path, output_path):
                     logging.error(f"Error opening image {filename}: {e}")
                     continue
 
-                lr_img_array = degradation.apply_degradation(np.array(img))
-                lr_img = Image.fromarray(lr_img_array.astype(np.uint8))
+                for i in range(nums):
+                    lr_img_array = degradation.apply_degradation(uint2single(np.array(img)))
+                    lr_img = Image.fromarray(single2uint(lr_img_array))
 
-                lr_img.save(os.path.join(lr_output_dir, filename))
+                    base_name, ext = os.path.splitext(filename)
+                    lr_filename = f"{base_name}_{i}{ext}"
+
+                    lr_img.save(os.path.join(lr_output_dir, lr_filename))
+                
+                # Lưu HR ảnh gốc chỉ một lần
                 img.save(os.path.join(hr_output_dir, filename))
+
             except Exception as e:
                 logging.error(f"Error processing {filename}: {e}")
     else:
@@ -64,6 +76,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Create LR/HR image pairs.")
     parser.add_argument("--input", type=str, required=True, help="Path to the input image or directory")
     parser.add_argument("--output", type=str, required=True, help="Path to the output directory")
+    parser.add_argument("--num", type=int, default=1, help="number of LR images to create from each HR image")
     args = parser.parse_args()
     logging.info(f"Starting create_lr with arguments: {args}")
     create_lr(args.input, args.output)
