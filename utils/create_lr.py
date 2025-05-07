@@ -25,12 +25,7 @@ def create_lr(input_path, output_path, nums=10):
     os.makedirs(hr_output_dir, exist_ok=True)
     os.makedirs(lr_output_dir, exist_ok=True)
 
-    degradation = LPDegradationModel(gaussian_sigma_range=(0.3, 1.0), 
-                                     noise_level_range=(0.01, 0.05), 
-                                     motion_blur_kernel_size_range=(5, 13), 
-                                     brightness_weight_range=(0.3, 0.7), 
-                                     lr_size=(128,32),
-                                     scale=0.3)
+    degradation = LPDegradationModel()
 
     if os.path.isdir(input_path):
         filenames = [f for f in os.listdir(input_path) if f.lower().endswith(('.png', '.jpg', '.jpeg', '.bmp', '.tiff'))]
@@ -76,7 +71,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Create LR/HR image pairs.")
     parser.add_argument("--input", type=str, required=True, help="Path to the input image or directory")
     parser.add_argument("--output", type=str, required=True, help="Path to the output directory")
-    parser.add_argument("--num", type=int, default=1, help="number of LR images to create from each HR image")
+    parser.add_argument("--num", type=int, default=10, help="number of LR images to create from each HR image")
     args = parser.parse_args()
     logging.info(f"Starting create_lr with arguments: {args}")
     create_lr(args.input, args.output)

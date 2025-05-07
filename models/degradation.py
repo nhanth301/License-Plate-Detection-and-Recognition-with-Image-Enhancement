@@ -6,14 +6,14 @@ import cv2
 import random
 import math
 import matplotlib.pyplot as plt
-from utils.utils_image import uint2single, single2uint
+from utils.utils_image import uint2single, single2uint, load_kernels_from_mat_folder, apply_kernel_rgb
 
 class LPDegradationModel:
     """
     A class to simulate low-resolution images by applying degradations to high-resolution images.
     Degradations include lighting effects, motion blur, Gaussian blur, scaling, and noise.
     """
-    def __init__(self, gaussian_sigma_range=(4.0, 6.0), noise_level_range=(0.01, 0.05), motion_blur_kernel_size_range=(17, 23), brightness_weight_range=(0.3, 0.7), lr_size=(96,32)):
+    def __init__(self, gaussian_sigma_range=(4.0, 6.0), noise_level_range=(0.01, 0.05), motion_blur_kernel_size_range=(17, 23), brightness_weight_range=(0.3, 0.7), lr_size=(128,64), scale=0.35):
         """
         Initialize the degradation model with hyperparameter ranges.
         All ranges are set to ensure reasonable degradation effects while output remains in [0,1] via clipping.
@@ -22,7 +22,9 @@ class LPDegradationModel:
         self.noise_level_range = noise_level_range   # Noise standard deviation range
         self.motion_blur_kernel_size_range = motion_blur_kernel_size_range  # Kernel size range for motion blur
         self.brightness_weight_range = brightness_weight_range  # Intensity range for lighting effects
+        self.scale = scale  
         self.lr_size = lr_size
+        self.kernels = load_kernels_from_mat_folder("/home/nhan/Desktop/Plate/license-plate-super-resolution/estimated-kn")
     def apply_degradation(self, hr_image):
         """
         Apply a fixed sequence of degradations to the input high-resolution image.
@@ -34,12 +36,11 @@ class LPDegradationModel:
             numpy.ndarray: Degraded image with values clipped to [0,1].
         """
         img = hr_image.copy()
+        # random kernel
+        kernel_index = random.randint(0, len(self.kernels)-1)
+        img = apply_kernel_rgb(img, self.kernels[kernel_index])
+
         
-        # Apply lighting effect with 70% probability
-        if random.random() > 0.7:
-            img = self.apply_lighting_effect(img)
-        
-        # Apply motion blur with 70% probability
         if random.random() > 0.7:
             img = self.apply_motion_blur(img)
         
@@ -48,7 +49,7 @@ class LPDegradationModel:
         img = np.clip(cv2.GaussianBlur(img, (0, 0), sigma), 0, 1)
         
         # Scale down the image
-        img = self.scale_down(img, 0.5)
+        img = self.scale_down(img, self.scale)
         
         # Add noise with random level
         noise_level = random.uniform(*self.noise_level_range)
@@ -237,3 +238,21 @@ class LPDegradationModel:
         hsv_image[:, :, 2] = v_channel
         result_image = cv2.cvtColor(hsv_image, cv2.COLOR_HSV2RGB)
         return np.clip(result_image, 0, 1)  # Clip final RGB output
+
+if __name__ == "__main__":
+    degradation = LPDegradationModel()
+    img = cv2.imread("/home/nhan/Desktop/New Folder/HR/_2_jpg.rf.1862bf8d42707d677b75a37396adb1d1_out.jpg")
+    img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+    img = uint2single(img)
+    degraded_img = degradation.apply_degradation(img)
+    degraded_img = single2uint(degraded_img)
+    plt.subplot(1, 2, 1)
+    plt.imshow(img)
+    plt.title("Original Image")
+    plt.axis('off')
+    plt.subplot(1, 2, 2)
+    plt.imshow(degraded_img)
+    plt.title("Degraded Image")
+    plt.axis('off')
+    plt.show()
+    cv2.imwrite("degraded_image.png", degraded_img)
