@@ -12,7 +12,7 @@ class LPSR(nn.Module):
         self.rdn = RDN(num_channels, num_features, growth_rate, num_blocks, num_layers)
         self.final_conv = nn.Conv2d(
             in_channels=num_features,
-            out_channels=1,
+            out_channels=3,
             kernel_size=3,
             padding=1,
         )
