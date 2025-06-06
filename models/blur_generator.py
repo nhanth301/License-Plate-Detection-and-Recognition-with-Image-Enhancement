@@ -2,11 +2,11 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from models.cross_attn import CrossAttention
-
+from models.feature_extractor import FeatureExtractor
 class BlurGenerator(nn.Module):
     def __init__(self, in_channels=3, out_channels=3, feature_dim=64):
         super(BlurGenerator, self).__init__()
-        
+        self.fe = FeatureExtractor(in_channels=in_channels, feature_dim=feature_dim)
         # Encoder for clear image
         self.enc1 = self.conv_block(in_channels, feature_dim)
         self.enc2 = self.conv_block(feature_dim, feature_dim * 2)
@@ -26,6 +26,7 @@ class BlurGenerator(nn.Module):
         self.final_conv = nn.Conv2d(feature_dim, out_channels, kernel_size=1)
         
         self.pool = nn.MaxPool2d(2, 2)
+        self.sigmoid = nn.Sigmoid()
 
     def conv_block(self, in_channels, out_channels):
         return nn.Sequential(
@@ -37,7 +38,9 @@ class BlurGenerator(nn.Module):
             nn.ReLU(inplace=True)
         )
 
-    def forward(self, clear_img, blur_features):
+    def forward(self, clear_img, blur_img):
+
+        blur_features = self.fe(clear_img, blur_img) 
         # Encode clear image
         enc1 = self.enc1(clear_img)
         enc2 = self.enc2(self.pool(enc1))
@@ -66,4 +69,4 @@ class BlurGenerator(nn.Module):
         dec2 = self.dec2(dec2)
         
         output = self.final_conv(dec2)
-        return output
+        return self.sigmoid(output)

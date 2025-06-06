@@ -16,10 +16,10 @@ class LPSR(nn.Module):
             kernel_size=3,
             padding=1,
         )
+        self.sigmoid = nn.Sigmoid()
 
     def forward(self, x):
         x = self.auto_encoder(x)
         x = self.rdn(x)
-        x = self.upscale(x)
         x = self.final_conv(x)
-        return x
+        return self.sigmoid(x)
