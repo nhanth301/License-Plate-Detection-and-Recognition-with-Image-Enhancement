@@ -6,13 +6,13 @@ from torch.utils.data import DataLoader
 import os 
 import argparse
 import matplotlib.pyplot as plt
+from torch.nn import functional as F
 
-from models.feature_extractor import FeatureExtractor
 from models.clear_generator import LPSR
 from models.blur_generator import BlurGenerator
 from models.discriminator import Discriminator
-
-
+from torchvision import models
+import shutil
 
 def train_models(blur_generator, discriminator, clear_generator,
                  dataloader, num_epochs, device, save_path="models"):
@@ -38,9 +38,41 @@ def train_models(blur_generator, discriminator, clear_generator,
     # Perceptual loss với VGG16
     vgg = models.vgg16(pretrained=True).features.to(device).eval()
     def perceptual_loss(img1, img2):
-        feat1 = vgg(img1)
-        feat2 = vgg(img2)
+        # Normalize đầu vào theo chuẩn VGG16
+        vgg_mean = torch.tensor([0.485, 0.456, 0.406]).view(1, 3, 1, 1).to(img1.device)
+        vgg_std = torch.tensor([0.229, 0.224, 0.225]).view(1, 3, 1, 1).to(img1.device)
+
+        img1_norm = (img1 - vgg_mean) / vgg_std
+        img2_norm = (img2 - vgg_mean) / vgg_std
+
+        feat1 = vgg(img1_norm)
+        feat2 = vgg(img2_norm)
+
         return nn.MSELoss()(feat1, feat2)
+    
+    def calc_mean_std(feat, eps=1e-5):
+        size = feat.size()
+        N, C = size[:2]
+        feat_var = feat.view(N, C, -1).var(dim=2) + eps
+        feat_std = feat_var.sqrt().view(N, C, 1, 1)
+        feat_mean = feat.view(N, C, -1).mean(dim=2).view(N, C, 1, 1)
+        return feat_mean, feat_std
+
+    def style_loss(fake_feats, real_feats):
+        loss = 0.0
+        for f_fake, f_real in zip(fake_feats, real_feats):
+            mean_fake, std_fake = calc_mean_std(f_fake)
+            mean_real, std_real = calc_mean_std(f_real)
+            loss += F.l1_loss(mean_fake, mean_real) + F.l1_loss(std_fake, std_real)
+        return loss
+    
+    def extract_features(x):
+        features = []
+        for i, layer in enumerate(vgg):
+            x = layer(x)
+            if i in {3, 8, 15}:  
+                features.append(x)
+        return features
 
     best_loss = float('inf')
 
@@ -52,61 +84,79 @@ def train_models(blur_generator, discriminator, clear_generator,
         total_gen_loss = 0
         total_disc_loss = 0
         total_sr_loss = 0
-
         for batch_idx, (clear_img, blur_img) in enumerate(dataloader):
             clear_img, blur_img = clear_img.to(device), blur_img.to(device)
             batch_size = clear_img.size(0)
 
-            # ======= Train Discriminator (mỗi 2 batch) =======
-            if batch_idx % 2 == 0:
-                fake_blur = blur_generator(clear_img, blur_img).detach()
-                real_labels = torch.full((batch_size, 1), 0.9, device=device)
-                fake_labels = torch.zeros((batch_size, 1), device=device)
-                real_input = blur_img + 0.05 * torch.randn_like(blur_img)
-                fake_input = fake_blur + 0.05 * torch.randn_like(fake_blur)
-                real_output = discriminator(real_input)
-                fake_output = discriminator(fake_input)
-                disc_real_loss = bce_loss(real_output, real_labels)
-                disc_fake_loss = bce_loss(fake_output, fake_labels)
-                disc_loss = (disc_real_loss + disc_fake_loss) / 2
-                optimizer_disc.zero_grad()
-                disc_loss.backward()
-                torch.nn.utils.clip_grad_norm_(discriminator.parameters(), max_norm=1.0)
-                optimizer_disc.step()
-                total_disc_loss += disc_loss.item()
-
-            # ======= Train Blur Generator (mỗi batch) =======
+            # Tạo ảnh mờ giả (fake_blur)
             fake_blur = blur_generator(clear_img, blur_img)
+
+            # === Train Discriminator (mỗi 2 batch) ===
+            real_labels = torch.full((batch_size, 1), 0.9, device=device)
+            fake_labels = torch.zeros((batch_size, 1), device=device)
+            real_input = blur_img + 0.05 * torch.randn_like(blur_img)
+            fake_input = fake_blur.detach() + 0.05 * torch.randn_like(fake_blur)
+
+            real_output = discriminator(real_input)
+            fake_output = discriminator(fake_input)
+
+            disc_real_loss = bce_loss(real_output, real_labels)
+            disc_fake_loss = bce_loss(fake_output, fake_labels)
+            disc_loss = (disc_real_loss + disc_fake_loss) / 2
+
+            optimizer_disc.zero_grad()
+            disc_loss.backward()
+            torch.nn.utils.clip_grad_norm_(discriminator.parameters(), max_norm=1.0)
+            optimizer_disc.step()
+            total_disc_loss += disc_loss.item()
+
+            # === Train Blur Generator và Clear Generator (cùng 1 lần update) ===
             gen_labels = torch.full((batch_size, 1), 0.9, device=device)
             fake_output_for_gen = discriminator(fake_blur)
-            gen_adv_loss = bce_loss(fake_output_for_gen, gen_labels)
-            gen_l1_loss = l1_loss(fake_blur, blur_img)  # Thêm L1 loss để cải thiện chất lượng ảnh mờ
-            gen_loss = gen_adv_loss + 0.1 * gen_l1_loss  # Trọng số 0.1 cho L1 loss
-            optimizer_blur_gen.zero_grad()
-            gen_loss.backward()
-            torch.nn.utils.clip_grad_norm_(blur_generator.parameters(), max_norm=1.0)
-            optimizer_blur_gen.step()
-            total_gen_loss += gen_loss.item()
 
-            # ======= Train Clear Generator (mỗi batch) =======
-            hr_output = clear_generator(fake_blur.detach())
+            gen_adv_loss = bce_loss(fake_output_for_gen, gen_labels)
+            fake_feats = extract_features(fake_blur)
+            real_feats = extract_features(blur_img)
+
+            gen_style_loss = style_loss(fake_feats, real_feats)
+
+            # Clear generator output
+            hr_output = clear_generator(fake_blur)
+
             sr_recon_loss = l1_loss(hr_output, clear_img) + l2_loss(hr_output, clear_img)
-            sr_perc_loss = perceptual_loss(hr_output, clear_img)  # Thêm perceptual loss
-            sr_loss = sr_recon_loss + 0.1 * sr_perc_loss  # Trọng số 0.1 cho perceptual loss
+            sr_perc_loss = perceptual_loss(hr_output, clear_img)
+            sr_loss = sr_recon_loss + 0.1 * sr_perc_loss
+
+            # Tổng loss cho blur generator
+            total_blur_gen_loss = gen_adv_loss + 5 * gen_style_loss + sr_loss
+
+            # zero_grad cho cả 2 optimizer trước
+            optimizer_blur_gen.zero_grad()
             optimizer_clear_gen.zero_grad()
-            sr_loss.backward()
+
+            # backward tổng loss
+            total_blur_gen_loss.backward()
+
+            # clip grad norm
+            torch.nn.utils.clip_grad_norm_(blur_generator.parameters(), max_norm=1.0)
             torch.nn.utils.clip_grad_norm_(clear_generator.parameters(), max_norm=1.0)
+
+            # update parameters
+            optimizer_blur_gen.step()
             optimizer_clear_gen.step()
+
+            total_gen_loss += (gen_adv_loss + 0.1 * gen_l1_loss).item()
             total_sr_loss += sr_loss.item()
 
-        # Cập nhật scheduler
+
+            # Cập nhật scheduler
         scheduler_blur_gen.step()
         scheduler_clear_gen.step()
         scheduler_disc.step()
 
         # Tính loss trung bình
         avg_gen_loss = total_gen_loss / len(dataloader)
-        avg_disc_loss = total_disc_loss / (len(dataloader) // 2)
+        avg_disc_loss = total_disc_loss / len(dataloader)
         avg_sr_loss = total_sr_loss / len(dataloader)
 
         print(f"Epoch {epoch+1}/{num_epochs}, Gen Loss: {avg_gen_loss:.4f}, Disc Loss: {avg_disc_loss:.4f}, SR Loss: {avg_sr_loss:.4f}")
