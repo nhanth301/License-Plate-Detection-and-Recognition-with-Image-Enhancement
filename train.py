@@ -119,16 +119,17 @@ def train_models(blur_generator, discriminator, clear_generator,
             real_feats = extract_features(blur_img)
 
             gen_style_loss = style_loss(fake_feats, real_feats)
+            fake_l1_loss = l1_loss(fake_blur, clear_img)
 
             # Clear generator output
             hr_output = clear_generator(fake_blur)
 
-            sr_recon_loss = l1_loss(hr_output, clear_img) + l2_loss(hr_output, clear_img)
+            sr_recon_loss = 5*l1_loss(hr_output, clear_img) + l2_loss(hr_output, clear_img)
             sr_perc_loss = perceptual_loss(hr_output, clear_img)
             sr_loss = sr_recon_loss + 0.1 * sr_perc_loss
 
             # Tổng loss cho blur generator
-            total_blur_gen_loss = gen_adv_loss + 5 * gen_style_loss + sr_loss
+            total_blur_gen_loss = 0.1*fake_l1_loss + gen_adv_loss + 0.1*gen_style_loss + sr_loss
 
             # zero_grad cho cả 2 optimizer trước
             optimizer_blur_gen.zero_grad()
@@ -145,7 +146,7 @@ def train_models(blur_generator, discriminator, clear_generator,
             optimizer_blur_gen.step()
             optimizer_clear_gen.step()
 
-            total_gen_loss += (gen_adv_loss + 0.1 * gen_l1_loss).item()
+            total_gen_loss += (0.1*fake_l1_loss + gen_adv_loss + 0.1*gen_style_loss).item()
             total_sr_loss += sr_loss.item()
 
 
@@ -212,12 +213,17 @@ def train_models(blur_generator, discriminator, clear_generator,
             torch.save(discriminator.state_dict(), os.path.join(save_path, "discriminator.pth"))
             torch.save(clear_generator.state_dict(), os.path.join(save_path, "sr.pth"))
             print(f"Saved best models at epoch {epoch+1}")
+        if epoch % 20 == 0:
+            torch.save(blur_generator.state_dict(), os.path.join(save_path, f"generator_{epoch}.pth"))
+            torch.save(discriminator.state_dict(), os.path.join(save_path, f"discriminator_{epoch}.pth"))
+            torch.save(clear_generator.state_dict(), os.path.join(save_path, f"sr_{epoch}.pth"))
+            print(f"Saved best models at epoch {epoch+1}")
 
 def main(args):
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     # Create dataset and dataloader
-    dataset = MyDataset(args.clear_folder, args.blur_folder, image_size=(64, 128))
+    dataset = MyDataset(args.clear_folder, args.blur_folder, image_size=(24, 188))
     dataloader = DataLoader(dataset, batch_size=args.batch_size, shuffle=True)
 
     blur_generator = BlurGenerator(in_channels=3, out_channels=3, feature_dim=64).to(device)
