@@ -15,12 +15,12 @@ from torchvision import models
 import shutil
 
 def train_models(blur_generator, discriminator, clear_generator,
-                 dataloader, num_epochs, device, save_path="models"):
+                 dataloader, num_epochs, device, save_path="models", vs_save_path="visualize"):
 
-    os.makedirs(save_path, exist_ok=True)
-    if os.path.exists("train_outputs"):
-        shutil.rmtree("train_outputs")
-    os.makedirs("train_outputs")
+    if not os.path.exists(vs_save_path):
+        os.makedirs(vs_save_path)
+    if not os.path.exists(save_path):
+        os.makedirs(save_path)
 
     l1_loss = nn.L1Loss()
     l2_loss = nn.MSELoss()
@@ -203,7 +203,7 @@ def train_models(blur_generator, discriminator, clear_generator,
         plt.axis('off')
 
         plt.tight_layout()
-        plt.savefig(f"train_outputs/output_epoch_{epoch}.png")
+        plt.savefig(f"{vs_save_path}/output_epoch_{epoch}.png")
         plt.close()  # đóng figure để tránh tốn bộ nhớ
 
         # Save best models (dựa trên gen loss)
@@ -237,7 +237,7 @@ def main(args):
 
     # Train models
     train_models(blur_generator, discriminator, clear_generator,
-                 dataloader, args.epochs, device, save_path=args.save_path)
+                 dataloader, args.epochs, device, save_path=args.save_path, vs_save_path=args.vs_save_path)
     
 
 if __name__ == "__main__":
@@ -248,6 +248,6 @@ if __name__ == "__main__":
     parser.add_argument("--clear_folder", type=str, help="Path to clear image folder")
     parser.add_argument("--blur_folder", type=str, help="Path to blurred image folder")
     parser.add_argument("--save_path", type=str, default="ckpts", help="Path to save trained model checkpoints")
-
+    parser.add_argument("--vs_save_path", type=str, default="visualize", help="Path to save trained model checkpoints")
     args = parser.parse_args()
     main(args)
