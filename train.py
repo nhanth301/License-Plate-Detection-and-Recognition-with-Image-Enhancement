@@ -18,8 +18,13 @@ def train_models(blur_generator, discriminator, clear_generator,
                  dataloader, num_epochs, device, save_path="models"):
 
     os.makedirs(save_path, exist_ok=True)
-    if not os.path.exists("train_outputs"):
-            os.makedirs("train_outputs")
+    #if exists, remove it and create a new one
+    if os.path.exists("train_outputs"):
+        import shutil
+        shutil.rmtree("train_outputs")
+    else:
+        os.makedirs("train_outputs")
+
     l1_loss = nn.L1Loss()
     l2_loss = nn.MSELoss()
     bce_loss = nn.BCELoss()
@@ -70,8 +75,7 @@ def train_models(blur_generator, discriminator, clear_generator,
                 torch.nn.utils.clip_grad_norm_(discriminator.parameters(), max_norm=1.0)
                 optimizer_disc.step()
                 total_disc_loss += disc_loss.item()
-            else:
-                disc_loss = torch.tensor(0.0).to(device)  # không cập nhật discriminator batch này
+
 
             # ======= Train Blur Generator =======
             fake_blur = blur_generator(clear_img, blur_img)
@@ -86,16 +90,17 @@ def train_models(blur_generator, discriminator, clear_generator,
             total_gen_loss += gen_loss.item()
 
             # ======= Train Clear Generator (SR) =======
-            hr_output = clear_generator(fake_blur)
-            sr_loss = l1_loss(hr_output, clear_img) + l2_loss(hr_output, clear_img)
-            optimizer_clear_gen.zero_grad()
-            sr_loss.backward()
-            optimizer_clear_gen.step()
-            total_sr_loss += sr_loss.item()
+            if batch_idx % 5 == 0:  
+                hr_output = clear_generator(fake_blur)
+                sr_loss = l1_loss(hr_output, clear_img) + l2_loss(hr_output, clear_img)
+                optimizer_clear_gen.zero_grad()
+                sr_loss.backward()
+                optimizer_clear_gen.step()
+                total_sr_loss += sr_loss.item()
 
         avg_gen_loss = total_gen_loss / len(dataloader)
-        avg_disc_loss = total_disc_loss / (len(dataloader)//2)  # discriminator chỉ update mỗi 2 batch
-        avg_sr_loss = total_sr_loss / len(dataloader)
+        avg_disc_loss = total_disc_loss / (len(dataloader)//2)  
+        avg_sr_loss = total_sr_loss / len(dataloader//5)
 
         print(f"Epoch {epoch+1}/{num_epochs}, Gen Loss: {avg_gen_loss:.4f}, Disc Loss: {avg_disc_loss:.4f}, SR Loss: {avg_sr_loss:.4f}")
 

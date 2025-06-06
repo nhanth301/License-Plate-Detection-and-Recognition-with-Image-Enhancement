@@ -3,6 +3,8 @@ import torch.nn as nn
 import torch.nn.functional as F
 from models.cross_attn import CrossAttention
 from models.feature_extractor import FeatureExtractor
+
+
 class BlurGenerator(nn.Module):
     def __init__(self, in_channels=3, out_channels=3, feature_dim=64):
         super(BlurGenerator, self).__init__()
