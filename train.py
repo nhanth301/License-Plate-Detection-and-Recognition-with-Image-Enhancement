@@ -223,7 +223,7 @@ def main(args):
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     # Create dataset and dataloader
-    dataset = MyDataset(args.clear_folder, args.blur_folder, image_size=(24, 188))
+    dataset = MyDataset(args.clear_folder, args.blur_folder, image_size=(64, 128))
     dataloader = DataLoader(dataset, batch_size=args.batch_size, shuffle=True)
 
     blur_generator = BlurGenerator(in_channels=3, out_channels=3, feature_dim=64).to(device)
