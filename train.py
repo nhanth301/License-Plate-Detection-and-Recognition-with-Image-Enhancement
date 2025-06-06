@@ -18,12 +18,9 @@ def train_models(blur_generator, discriminator, clear_generator,
                  dataloader, num_epochs, device, save_path="models"):
 
     os.makedirs(save_path, exist_ok=True)
-    #if exists, remove it and create a new one
     if os.path.exists("train_outputs"):
-        import shutil
         shutil.rmtree("train_outputs")
-    else:
-        os.makedirs("train_outputs")
+    os.makedirs("train_outputs")
 
     l1_loss = nn.L1Loss()
     l2_loss = nn.MSELoss()
@@ -32,7 +29,19 @@ def train_models(blur_generator, discriminator, clear_generator,
     optimizer_blur_gen = optim.Adam(blur_generator.parameters(), lr=0.0002)
     optimizer_clear_gen = optim.Adam(clear_generator.parameters(), lr=0.0002)
     optimizer_disc = optim.Adam(discriminator.parameters(), lr=0.0002)
-    
+
+    # Thêm scheduler để giảm learning rate
+    scheduler_blur_gen = optim.lr_scheduler.StepLR(optimizer_blur_gen, step_size=10, gamma=0.5)
+    scheduler_clear_gen = optim.lr_scheduler.StepLR(optimizer_clear_gen, step_size=10, gamma=0.5)
+    scheduler_disc = optim.lr_scheduler.StepLR(optimizer_disc, step_size=10, gamma=0.5)
+
+    # Perceptual loss với VGG16
+    vgg = models.vgg16(pretrained=True).features.to(device).eval()
+    def perceptual_loss(img1, img2):
+        feat1 = vgg(img1)
+        feat2 = vgg(img2)
+        return nn.MSELoss()(feat1, feat2)
+
     best_loss = float('inf')
 
     for epoch in range(num_epochs):
@@ -48,61 +57,66 @@ def train_models(blur_generator, discriminator, clear_generator,
             clear_img, blur_img = clear_img.to(device), blur_img.to(device)
             batch_size = clear_img.size(0)
 
+            # ======= Train Discriminator (mỗi 2 batch) =======
             if batch_idx % 2 == 0:
-                fake_blur = blur_generator(clear_img, blur_img)
-
-                # Label smoothing cho real labels
+                fake_blur = blur_generator(clear_img, blur_img).detach()
                 real_labels = torch.full((batch_size, 1), 0.9, device=device)
                 fake_labels = torch.zeros((batch_size, 1), device=device)
-
-                # Thêm noise Gaussian nhỏ vào đầu vào discriminator
                 real_input = blur_img + 0.05 * torch.randn_like(blur_img)
-                fake_input = fake_blur.detach() + 0.05 * torch.randn_like(fake_blur)
-
-                # Discriminator trên ảnh blur thật
+                fake_input = fake_blur + 0.05 * torch.randn_like(fake_blur)
                 real_output = discriminator(real_input)
-                disc_real_loss = bce_loss(real_output, real_labels)
-
-                # Discriminator trên ảnh blur giả
                 fake_output = discriminator(fake_input)
+                disc_real_loss = bce_loss(real_output, real_labels)
                 disc_fake_loss = bce_loss(fake_output, fake_labels)
-
                 disc_loss = (disc_real_loss + disc_fake_loss) / 2
-
                 optimizer_disc.zero_grad()
                 disc_loss.backward()
-                # Gradient clipping cho discriminator
                 torch.nn.utils.clip_grad_norm_(discriminator.parameters(), max_norm=1.0)
                 optimizer_disc.step()
                 total_disc_loss += disc_loss.item()
 
-
-            # ======= Train Blur Generator =======
+            # ======= Train Blur Generator (mỗi batch) =======
             fake_blur = blur_generator(clear_img, blur_img)
-            gen_labels = torch.full((batch_size, 1), 0.9, device=device)  # label smoothing cho generator fool discriminator
-            fake_output_for_gen = discriminator(fake_blur.detach())
+            gen_labels = torch.full((batch_size, 1), 0.9, device=device)
+            fake_output_for_gen = discriminator(fake_blur)
             gen_adv_loss = bce_loss(fake_output_for_gen, gen_labels)
-            gen_loss = gen_adv_loss
-
+            gen_l1_loss = l1_loss(fake_blur, blur_img)  # Thêm L1 loss để cải thiện chất lượng ảnh mờ
+            gen_loss = gen_adv_loss + 0.1 * gen_l1_loss  # Trọng số 0.1 cho L1 loss
             optimizer_blur_gen.zero_grad()
             gen_loss.backward()
+            torch.nn.utils.clip_grad_norm_(blur_generator.parameters(), max_norm=1.0)
             optimizer_blur_gen.step()
             total_gen_loss += gen_loss.item()
 
-            # ======= Train Clear Generator (SR) =======
-            if batch_idx % 5 == 0:  
-                hr_output = clear_generator(fake_blur)
-                sr_loss = l1_loss(hr_output, clear_img) + l2_loss(hr_output, clear_img)
-                optimizer_clear_gen.zero_grad()
-                sr_loss.backward()
-                optimizer_clear_gen.step()
-                total_sr_loss += sr_loss.item()
+            # ======= Train Clear Generator (mỗi batch) =======
+            hr_output = clear_generator(fake_blur.detach())
+            sr_recon_loss = l1_loss(hr_output, clear_img) + l2_loss(hr_output, clear_img)
+            sr_perc_loss = perceptual_loss(hr_output, clear_img)  # Thêm perceptual loss
+            sr_loss = sr_recon_loss + 0.1 * sr_perc_loss  # Trọng số 0.1 cho perceptual loss
+            optimizer_clear_gen.zero_grad()
+            sr_loss.backward()
+            torch.nn.utils.clip_grad_norm_(clear_generator.parameters(), max_norm=1.0)
+            optimizer_clear_gen.step()
+            total_sr_loss += sr_loss.item()
 
+        # Cập nhật scheduler
+        scheduler_blur_gen.step()
+        scheduler_clear_gen.step()
+        scheduler_disc.step()
+
+        # Tính loss trung bình
         avg_gen_loss = total_gen_loss / len(dataloader)
-        avg_disc_loss = total_disc_loss / (len(dataloader)//2)  
-        avg_sr_loss = total_sr_loss / len(dataloader//5)
+        avg_disc_loss = total_disc_loss / (len(dataloader) // 2)
+        avg_sr_loss = total_sr_loss / len(dataloader)
 
         print(f"Epoch {epoch+1}/{num_epochs}, Gen Loss: {avg_gen_loss:.4f}, Disc Loss: {avg_disc_loss:.4f}, SR Loss: {avg_sr_loss:.4f}")
+
+        # Lưu mô hình nếu loss cải thiện
+        if avg_sr_loss < best_loss:
+            best_loss = avg_sr_loss
+            torch.save(blur_generator.state_dict(), os.path.join(save_path, "best_blur_generator.pth"))
+            torch.save(clear_generator.state_dict(), os.path.join(save_path, "best_clear_generator.pth"))
+            torch.save(discriminator.state_dict(), os.path.join(save_path, "best_discriminator.pth"))
 
         # Visualize hình ảnh (lấy batch đầu tiên của epoch)
         clear_img_cpu = clear_img[0].detach().cpu()
