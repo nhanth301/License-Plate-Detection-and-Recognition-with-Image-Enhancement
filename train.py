@@ -7,7 +7,6 @@ import os
 import argparse
 import matplotlib.pyplot as plt
 from torch.nn import functional as F
-
 from models.clear_generator import LPSR
 from models.blur_generator import BlurGenerator
 from models.discriminator import Discriminator
@@ -30,24 +29,20 @@ def train_models(blur_generator, discriminator, clear_generator,
     optimizer_clear_gen = optim.Adam(clear_generator.parameters(), lr=0.0002)
     optimizer_disc = optim.Adam(discriminator.parameters(), lr=0.0002)
 
-    # Thêm scheduler để giảm learning rate
+    # Learning rate schedulers
     scheduler_blur_gen = optim.lr_scheduler.StepLR(optimizer_blur_gen, step_size=10, gamma=0.5)
     scheduler_clear_gen = optim.lr_scheduler.StepLR(optimizer_clear_gen, step_size=10, gamma=0.5)
     scheduler_disc = optim.lr_scheduler.StepLR(optimizer_disc, step_size=10, gamma=0.5)
 
-    # Perceptual loss với VGG16
+    # Perceptual loss with VGG16
     vgg = models.vgg16(pretrained=True).features.to(device).eval()
     def perceptual_loss(img1, img2):
-        # Normalize đầu vào theo chuẩn VGG16
         vgg_mean = torch.tensor([0.485, 0.456, 0.406]).view(1, 3, 1, 1).to(img1.device)
         vgg_std = torch.tensor([0.229, 0.224, 0.225]).view(1, 3, 1, 1).to(img1.device)
-
         img1_norm = (img1 - vgg_mean) / vgg_std
         img2_norm = (img2 - vgg_mean) / vgg_std
-
         feat1 = vgg(img1_norm)
         feat2 = vgg(img2_norm)
-
         return nn.MSELoss()(feat1, feat2)
     
     def calc_mean_std(feat, eps=1e-5):
@@ -74,7 +69,7 @@ def train_models(blur_generator, discriminator, clear_generator,
                 features.append(x)
         return features
 
-    best_loss = float('inf')
+    best_sr_loss = float('inf')
 
     for epoch in range(num_epochs):
         blur_generator.train()
@@ -88,10 +83,10 @@ def train_models(blur_generator, discriminator, clear_generator,
             clear_img, blur_img = clear_img.to(device), blur_img.to(device)
             batch_size = clear_img.size(0)
 
-            # Tạo ảnh mờ giả (fake_blur)
+            # Generate fake blurred image
             fake_blur = blur_generator(clear_img, blur_img)
 
-            # === Train Discriminator (mỗi 2 batch) ===
+            # Train Discriminator
             real_labels = torch.full((batch_size, 1), 0.9, device=device)
             fake_labels = torch.zeros((batch_size, 1), device=device)
             real_input = blur_img + 0.05 * torch.randn_like(blur_img)
@@ -110,114 +105,107 @@ def train_models(blur_generator, discriminator, clear_generator,
             optimizer_disc.step()
             total_disc_loss += disc_loss.item()
 
-            # === Train Blur Generator và Clear Generator (cùng 1 lần update) ===
+            # Train Blur Generator and Clear Generator
             gen_labels = torch.full((batch_size, 1), 0.9, device=device)
             fake_output_for_gen = discriminator(fake_blur)
 
             gen_adv_loss = bce_loss(fake_output_for_gen, gen_labels)
             fake_feats = extract_features(fake_blur)
             real_feats = extract_features(blur_img)
-
             gen_style_loss = style_loss(fake_feats, real_feats)
-            fake_l1_loss = l1_loss(fake_blur, clear_img)
+
+            # Content loss using VGG features (layer 8)
+            clear_feats = extract_features(clear_img)
+            content_loss = nn.MSELoss()(fake_feats[1], clear_feats[1])
 
             # Clear generator output
             hr_output = clear_generator(fake_blur)
 
-            sr_recon_loss = 5*l1_loss(hr_output, clear_img) + l2_loss(hr_output, clear_img)
+            sr_recon_loss = 5 * l1_loss(hr_output, clear_img) + l2_loss(hr_output, clear_img)
             sr_perc_loss = perceptual_loss(hr_output, clear_img)
             sr_loss = sr_recon_loss + 0.1 * sr_perc_loss
 
-            # Tổng loss cho blur generator
-            total_blur_gen_loss = 0.1*fake_l1_loss + gen_adv_loss + 0.1*gen_style_loss + sr_loss
+            # Total loss for blur generator
+            total_blur_gen_loss = gen_adv_loss + 0.1 * gen_style_loss + 0.01 * content_loss + sr_loss
 
-            # zero_grad cho cả 2 optimizer trước
+            # Zero gradients for both optimizers
             optimizer_blur_gen.zero_grad()
             optimizer_clear_gen.zero_grad()
 
-            # backward tổng loss
+            # Backward pass
             total_blur_gen_loss.backward()
 
-            # clip grad norm
+            # Clip gradients
             torch.nn.utils.clip_grad_norm_(blur_generator.parameters(), max_norm=1.0)
             torch.nn.utils.clip_grad_norm_(clear_generator.parameters(), max_norm=1.0)
 
-            # update parameters
+            # Update parameters
             optimizer_blur_gen.step()
             optimizer_clear_gen.step()
 
-            total_gen_loss += (0.1*fake_l1_loss + gen_adv_loss + 0.1*gen_style_loss).item()
+            total_gen_loss += (gen_adv_loss + 0.1 * gen_style_loss + 0.01 * content_loss).item()
             total_sr_loss += sr_loss.item()
 
-
-            # Cập nhật scheduler
+        # Update schedulers
         scheduler_blur_gen.step()
         scheduler_clear_gen.step()
         scheduler_disc.step()
 
-        # Tính loss trung bình
+        # Calculate average losses
         avg_gen_loss = total_gen_loss / len(dataloader)
         avg_disc_loss = total_disc_loss / len(dataloader)
         avg_sr_loss = total_sr_loss / len(dataloader)
 
         print(f"Epoch {epoch+1}/{num_epochs}, Gen Loss: {avg_gen_loss:.4f}, Disc Loss: {avg_disc_loss:.4f}, SR Loss: {avg_sr_loss:.4f}")
 
-        # Lưu mô hình nếu loss cải thiện
-        if avg_sr_loss < best_loss:
-            best_loss = avg_sr_loss
+        # Save models if SR loss improves
+        if avg_sr_loss < best_sr_loss:
+            best_sr_loss = avg_sr_loss
             torch.save(blur_generator.state_dict(), os.path.join(save_path, "best_blur_generator.pth"))
             torch.save(clear_generator.state_dict(), os.path.join(save_path, "best_clear_generator.pth"))
             torch.save(discriminator.state_dict(), os.path.join(save_path, "best_discriminator.pth"))
+            print(f"Saved best models at epoch {epoch+1}")
 
-        # Visualize hình ảnh (lấy batch đầu tiên của epoch)
+        # Save periodic checkpoints
+        if epoch % 20 == 0:
+            torch.save(blur_generator.state_dict(), os.path.join(save_path, f"generator_{epoch}.pth"))
+            torch.save(discriminator.state_dict(), os.path.join(save_path, f"discriminator_{epoch}.pth"))
+            torch.save(clear_generator.state_dict(), os.path.join(save_path, f"sr_{epoch}.pth"))
+
+        # Visualize images (first sample of the last batch)
         clear_img_cpu = clear_img[0].detach().cpu()
         fake_blur_cpu = fake_blur[0].detach().cpu()
         real_blur_cpu = blur_img[0].detach().cpu()
         sr_img_cpu = hr_output[0].detach().cpu()
 
-        # Chuyển về [H,W,C] và range 0-1 cho matplotlib nếu cần (giả sử ảnh đã normalize [-1,1])
         def denormalize(img_tensor):
             img_tensor = img_tensor.clamp(0, 1)
             return img_tensor.permute(1, 2, 0).numpy()
 
-        plt.figure(figsize=(16,4))  # rộng hơn để đủ chỗ cho 4 ảnh
-
-        plt.subplot(1,4,1)
+        plt.figure(figsize=(16, 4))
+        plt.subplot(1, 4, 1)
         plt.title("Clear Image (GT)")
         plt.imshow(denormalize(clear_img_cpu))
         plt.axis('off')
 
-        plt.subplot(1,4,2)
+        plt.subplot(1, 4, 2)
         plt.title("Fake Blur")
         plt.imshow(denormalize(fake_blur_cpu))
         plt.axis('off')
 
-        plt.subplot(1,4,3)
+        plt.subplot(1, 4, 3)
         plt.title("SR Image")
         plt.imshow(denormalize(sr_img_cpu))
         plt.axis('off')
 
-        plt.subplot(1,4,4)
+        plt.subplot(1, 4, 4)
         plt.title("Real Blur")
-        plt.imshow(denormalize(real_blur_cpu))  # bạn cần có biến real_blur_cpu chuẩn bị sẵn
+        plt.imshow(denormalize(real_blur_cpu))
         plt.axis('off')
 
         plt.tight_layout()
         plt.savefig(f"{vs_save_path}/output_epoch_{epoch}.png")
-        plt.close()  # đóng figure để tránh tốn bộ nhớ
-
-        # Save best models (dựa trên gen loss)
-        if avg_gen_loss < best_loss:
-            best_loss = avg_gen_loss
-            torch.save(blur_generator.state_dict(), os.path.join(save_path, "generator.pth"))
-            torch.save(discriminator.state_dict(), os.path.join(save_path, "discriminator.pth"))
-            torch.save(clear_generator.state_dict(), os.path.join(save_path, "sr.pth"))
-            print(f"Saved best models at epoch {epoch+1}")
-        if epoch % 20 == 0:
-            torch.save(blur_generator.state_dict(), os.path.join(save_path, f"generator_{epoch}.pth"))
-            torch.save(discriminator.state_dict(), os.path.join(save_path, f"discriminator_{epoch}.pth"))
-            torch.save(clear_generator.state_dict(), os.path.join(save_path, f"sr_{epoch}.pth"))
-            print(f"Saved best models at epoch {epoch+1}")
+        plt.close()
 
 def main(args):
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -238,16 +226,14 @@ def main(args):
     # Train models
     train_models(blur_generator, discriminator, clear_generator,
                  dataloader, args.epochs, device, save_path=args.save_path, vs_save_path=args.vs_save_path)
-    
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Train image deblurring model")
-
     parser.add_argument("--epochs", type=int, default=50, help="Number of training epochs")
     parser.add_argument("--batch_size", type=int, default=8, help="Batch size for training")
     parser.add_argument("--clear_folder", type=str, help="Path to clear image folder")
     parser.add_argument("--blur_folder", type=str, help="Path to blurred image folder")
     parser.add_argument("--save_path", type=str, default="ckpts", help="Path to save trained model checkpoints")
-    parser.add_argument("--vs_save_path", type=str, default="visualize", help="Path to save trained model checkpoints")
+    parser.add_argument("--vs_save_path", type=str, default="visualize", help="Path to save visualization outputs")
     args = parser.parse_args()
     main(args)
