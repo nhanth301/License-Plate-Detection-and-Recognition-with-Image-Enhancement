@@ -12,6 +12,7 @@ from models.blur_generator import BlurGenerator
 from models.discriminator import Discriminator
 from torchvision import models
 import shutil
+from tqdm import tqdm
 
 def train_models(blur_generator, discriminator, clear_generator,
                  dataloader, num_epochs, device, save_path="models", vs_save_path="visualize"):
@@ -71,7 +72,7 @@ def train_models(blur_generator, discriminator, clear_generator,
 
     best_sr_loss = float('inf')
 
-    for epoch in range(num_epochs):
+    for epoch in tqdm(range(num_epochs), desc="Epochs"):
         blur_generator.train()
         clear_generator.train()
         discriminator.train()
@@ -79,7 +80,7 @@ def train_models(blur_generator, discriminator, clear_generator,
         total_gen_loss = 0
         total_disc_loss = 0
         total_sr_loss = 0
-        for batch_idx, (clear_img, blur_img) in enumerate(dataloader):
+        for batch_idx, (clear_img, blur_img) in enumerate(tqdm(dataloader, desc=f"Epoch {epoch+1}/{num_epochs}")):
             clear_img, blur_img = clear_img.to(device), blur_img.to(device)
             batch_size = clear_img.size(0)
 
