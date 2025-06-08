@@ -72,7 +72,7 @@ def train_models(blur_generator, discriminator, clear_generator,
         else:
             for i, layer in enumerate(vgg):
                 x = layer(x)
-                if i in {8, 9, 10}:  
+                if i in {19, 20, 21}:  
                     features.append(x)
         return features
 
