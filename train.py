@@ -62,12 +62,18 @@ def train_models(blur_generator, discriminator, clear_generator,
             loss += F.l1_loss(mean_fake, mean_real) + F.l1_loss(std_fake, std_real)
         return loss
     
-    def extract_features(x):
+    def extract_features(x, style=True):
         features = []
-        for i, layer in enumerate(vgg):
-            x = layer(x)
-            if i in {3, 8, 15}:  
-                features.append(x)
+        if style:
+            for i, layer in enumerate(vgg):
+                x = layer(x)
+                if i in {0,1, 2}:  
+                    features.append(x)
+        else:
+            for i, layer in enumerate(vgg):
+                x = layer(x)
+                if i in {8, 9, 10}:  
+                    features.append(x)
         return features
 
     best_sr_loss = float('inf')
@@ -115,9 +121,9 @@ def train_models(blur_generator, discriminator, clear_generator,
             real_feats = extract_features(blur_img)
             gen_style_loss = style_loss(fake_feats, real_feats)
 
-            # Content loss using VGG features (layer 8)
-            clear_feats = extract_features(clear_img)
-            content_loss = nn.MSELoss()(fake_feats[1], clear_feats[1])
+            # Content loss using VGG features (layer 8,9,10)
+            clear_feats = extract_features(clear_img, style=False)
+            content_loss =  nn.MSELoss()(fake_feats[0], clear_feats[0]) + nn.MSELoss()(fake_feats[1], clear_feats[1]) + nn.MSELoss()(fake_feats[2], clear_feats[2])
 
             # Clear generator output
             hr_output = clear_generator(fake_blur)
@@ -127,7 +133,7 @@ def train_models(blur_generator, discriminator, clear_generator,
             sr_loss = sr_recon_loss + 0.1 * sr_perc_loss
 
             # Total loss for blur generator
-            total_blur_gen_loss = gen_adv_loss + 0.1 * gen_style_loss + 0.01 * content_loss + sr_loss
+            total_blur_gen_loss = gen_adv_loss + 0.01 * gen_style_loss + 0.01 * content_loss + sr_loss
 
             # Zero gradients for both optimizers
             optimizer_blur_gen.zero_grad()
