@@ -123,6 +123,7 @@ def train_models(blur_generator, discriminator, clear_generator,
 
             # Content loss using VGG features (layer 8,9,10)
             clear_feats = extract_features(clear_img, style=False)
+            fake_feats = extract_features(fake_blur, style=False)
             content_loss =  nn.MSELoss()(fake_feats[0], clear_feats[0]) + nn.MSELoss()(fake_feats[1], clear_feats[1]) + nn.MSELoss()(fake_feats[2], clear_feats[2])
 
             # Clear generator output
