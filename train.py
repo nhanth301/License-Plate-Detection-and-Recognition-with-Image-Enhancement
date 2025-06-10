@@ -8,7 +8,7 @@ import argparse
 import matplotlib.pyplot as plt
 from torch.nn import functional as F
 from models.clear_generator import LPSR
-from models.hybrid_blur_generator import HybridBlurGenerator
+from models.blur_generator import HybridBlurGenerator
 from models.discriminator import Discriminator
 from torchvision import models
 from tqdm import tqdm
