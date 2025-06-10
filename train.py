@@ -8,7 +8,7 @@ import argparse
 import matplotlib.pyplot as plt
 from torch.nn import functional as F
 from models.clear_generator import LPSR
-from models.blur_generator import BlurGeneratorMixture
+from models.blur_generator import BlurGenerator 
 from models.discriminator import Discriminator
 from torchvision import models
 from tqdm import tqdm
@@ -18,10 +18,27 @@ def kernel_regularization_loss(kernel):
     tv_w = torch.sum(torch.abs(kernel[:, :, :, 1:] - kernel[:, :, :, :-1]))
     return tv_h + tv_w
 
-def train_models(blur_generator, discriminator, clear_generator,
-                 dataloader, num_epochs, device, save_path="models", vs_save_path="visualize"):
+def compute_gradient_penalty(discriminator, real_samples, fake_samples, device):
+    alpha = torch.randn(real_samples.size(0), 1, 1, 1, device=device)
+    interpolates = (alpha * real_samples + ((1 - alpha) * fake_samples)).requires_grad_(True)
+    d_interpolates = discriminator(interpolates)
+    fake = torch.ones(d_interpolates.size(), device=device, requires_grad=False)
+    
+    gradients = torch.autograd.grad(
+        outputs=d_interpolates,
+        inputs=interpolates,
+        grad_outputs=fake,
+        create_graph=True,
+        retain_graph=True,
+        only_inputs=True,
+    )[0]
+    
+    gradients = gradients.view(gradients.size(0), -1)
+    gradient_penalty = ((gradients.norm(2, dim=1) - 1) ** 2).mean()
+    return gradient_penalty
 
-    torch.autograd.set_detect_anomaly(True)
+def train_models(blur_generator, discriminator, clear_generator,
+                 dataloader, num_epochs, device, save_path="models", vs_save_path="visualize", n_critic=5):
 
     if not os.path.exists(vs_save_path):
         os.makedirs(vs_save_path)
@@ -30,15 +47,10 @@ def train_models(blur_generator, discriminator, clear_generator,
 
     l1_loss = nn.L1Loss()
     l2_loss = nn.MSELoss()
-    adversarial_loss = nn.BCEWithLogitsLoss()
 
-    optimizer_blur_gen = optim.Adam(blur_generator.parameters(), lr=2e-5, betas=(0.5, 0.999))
-    optimizer_clear_gen = optim.Adam(clear_generator.parameters(), lr=2e-5, betas=(0.5, 0.999))
-    optimizer_disc = optim.Adam(discriminator.parameters(), lr=1e-5, betas=(0.5, 0.999))
-
-    scheduler_blur_gen = optim.lr_scheduler.StepLR(optimizer_blur_gen, step_size=20, gamma=0.5)
-    scheduler_clear_gen = optim.lr_scheduler.StepLR(optimizer_clear_gen, step_size=20, gamma=0.5)
-    scheduler_disc = optim.lr_scheduler.StepLR(optimizer_disc, step_size=20, gamma=0.5)
+    optimizer_blur_gen = optim.Adam(blur_generator.parameters(), lr=1e-4, betas=(0.0, 0.9))
+    optimizer_clear_gen = optim.Adam(clear_generator.parameters(), lr=1e-4, betas=(0.0, 0.9))
+    optimizer_disc = optim.Adam(discriminator.parameters(), lr=1e-4, betas=(0.0, 0.9))
 
     vgg = models.vgg16(pretrained=True).features.to(device).eval()
     
@@ -77,26 +89,24 @@ def train_models(blur_generator, discriminator, clear_generator,
             real_output = discriminator(blur_img)
             fake_output = discriminator(fake_blur.detach())
 
-            real_labels = torch.full_like(real_output, 0.9, device=device)
-            fake_labels = torch.zeros_like(fake_output, device=device)
-
-            disc_real_loss = adversarial_loss(real_output, real_labels)
-            disc_fake_loss = adversarial_loss(fake_output, fake_labels)
-            disc_loss = (disc_real_loss + disc_fake_loss) / 2
+            lambda_gp = 10
+            gradient_penalty = compute_gradient_penalty(discriminator, blur_img.data, fake_blur.data, device)
+            
+            disc_loss = torch.mean(fake_output) - torch.mean(real_output) + lambda_gp * gradient_penalty
             
             disc_loss.backward()
             optimizer_disc.step()
             
             total_disc_loss += disc_loss.item()
 
-            for gen_update_step in range(2): 
+            if (batch_idx + 1) % n_critic == 0:
                 optimizer_blur_gen.zero_grad()
                 optimizer_clear_gen.zero_grad()
                 
                 fake_blur, blur_kernel = blur_generator(clear_img, blur_img)
                 fake_output_for_gen = discriminator(fake_blur)
-                gen_labels = torch.ones_like(fake_output_for_gen, device=device)
-                gen_adv_loss = adversarial_loss(fake_output_for_gen, gen_labels)
+                
+                gen_adv_loss = -torch.mean(fake_output_for_gen)
 
                 clear_feats_content = vgg_content_layers(clear_img)
                 fake_feats_content = vgg_content_layers(fake_blur)
@@ -114,21 +124,17 @@ def train_models(blur_generator, discriminator, clear_generator,
                 total_gen_and_sr_loss.backward()
                 optimizer_blur_gen.step()
                 optimizer_clear_gen.step()
+                
+                total_gen_loss += gen_adv_loss.item()
+                total_sr_loss += sr_loss.item()
 
-            total_gen_loss += (gen_adv_loss + 0.05 * content_loss).item()
-            total_sr_loss += sr_loss.item()
-
-        scheduler_blur_gen.step()
-        scheduler_clear_gen.step()
-        scheduler_disc.step()
-
-        avg_gen_loss = total_gen_loss / len(dataloader)
+        avg_gen_loss = total_gen_loss / (len(dataloader) / n_critic) if total_gen_loss != 0 else 0
         avg_disc_loss = total_disc_loss / len(dataloader)
-        avg_sr_loss = total_sr_loss / len(dataloader)
+        avg_sr_loss = total_sr_loss / (len(dataloader) / n_critic) if total_sr_loss != 0 else 0
 
         print(f"Epoch {epoch+1}/{num_epochs}, Gen Loss: {avg_gen_loss:.4f}, Disc Loss: {avg_disc_loss:.4f}, SR Loss: {avg_sr_loss:.4f}")
 
-        if avg_sr_loss < best_sr_loss:
+        if avg_sr_loss < best_sr_loss and avg_sr_loss != 0:
             best_sr_loss = avg_sr_loss
             torch.save(blur_generator.state_dict(), os.path.join(save_path, "best_blur_generator.pth"))
             torch.save(clear_generator.state_dict(), os.path.join(save_path, "best_clear_generator.pth"))
@@ -171,11 +177,10 @@ def main(args):
     dataset = MyDataset(args.clear_folder, args.blur_folder, image_size=(64, 128))
     dataloader = DataLoader(dataset, batch_size=args.batch_size, shuffle=True, num_workers=4, pin_memory=True)
 
-    blur_generator = BlurGeneratorMixture(
+    blur_generator = BlurGenerator(
         in_channels=3, 
         feature_dim=64, 
-        kernel_size=args.kernel_size,
-        num_kernels=5
+        kernel_size=args.kernel_size
     ).to(device)
     
     clear_generator = LPSR(
@@ -193,7 +198,8 @@ def main(args):
         blur_generator, discriminator, clear_generator,
         dataloader, args.epochs, device, 
         save_path=args.save_path, 
-        vs_save_path=args.vs_save_path
+        vs_save_path=args.vs_save_path,
+        n_critic=args.n_critic
     )
 
 if __name__ == "__main__":
@@ -201,9 +207,10 @@ if __name__ == "__main__":
     parser.add_argument("--epochs", type=int, default=200, help="Number of training epochs")
     parser.add_argument("--batch_size", type=int, default=16, help="Batch size for training")
     parser.add_argument("--kernel_size", type=int, default=11, help="Size of the blur kernel to estimate")
+    parser.add_argument("--n_critic", type=int, default=5, help="Number of critic updates per generator update")
     parser.add_argument("--clear_folder", type=str, required=True, help="Path to clear image folder")
     parser.add_argument("--blur_folder", type=str, required=True, help="Path to blurred image folder")
-    parser.add_argument("--save_path", type=str, default="ckpts_mixture", help="Path to save trained model checkpoints")
-    parser.add_argument("--vs_save_path", type=str, default="visualize_mixture", help="Path to save visualization outputs")
+    parser.add_argument("--save_path", type=str, default="ckpts_wgan", help="Path to save trained model checkpoints")
+    parser.add_argument("--vs_save_path", type=str, default="visualize_wgan", help="Path to save visualization outputs")
     args = parser.parse_args()
     main(args)
