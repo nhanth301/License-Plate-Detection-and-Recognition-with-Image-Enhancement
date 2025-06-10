@@ -118,16 +118,14 @@ class HybridBlurGenerator(nn.Module):
         ax = torch.arange(-(kernel_size // 2), kernel_size // 2 + 1, dtype=torch.float32, device=device)
         xx, yy = torch.meshgrid(ax, ax, indexing='xy')
         
-        kernel = torch.exp(-(xx**2 + yy**2) / (2 * sigma**2 + 1e-6))
+        exponent = -(xx**2 + yy**2) / (2 * sigma**2 + 1e-6)
         
-        # Thêm lại kẹp an toàn để tăng độ ổn định
-        exponent = torch.clamp(-(xx**2 + yy**2) / (2 * sigma**2 + 1e-6), max=0.0)
+        exponent = torch.clamp(exponent, max=0.0)
         kernel = torch.exp(exponent)
 
         kernel_sum = torch.sum(kernel, dim=[1, 2], keepdim=True)
         kernel = kernel / (kernel_sum + 1e-6)
         
-        # Sửa lỗi: trả về tensor 4D [B, 1, k, k]
         return kernel.unsqueeze(1)
 
     def forward(self, clear_img, blur_img):
