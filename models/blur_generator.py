@@ -93,9 +93,9 @@ class KernelParameterEncoder(nn.Module):
         normalized_weights = F.softmax(raw_weights, dim=1)
         return raw_params, normalized_weights
 
-class BlurGeneratorMixture(nn.Module):
+class BlurGenerator(nn.Module):
     def __init__(self, in_channels=3, feature_dim=64, kernel_size=11, num_kernels=5):
-        super(BlurGeneratorMixture, self).__init__()
+        super(BlurGenerator, self).__init__()
         self.kernel_size = kernel_size
         self.num_kernels = num_kernels
         self.params_per_kernel = 5
