@@ -21,6 +21,8 @@ def kernel_regularization_loss(kernel):
 def train_models(blur_generator, discriminator, clear_generator,
                  dataloader, num_epochs, device, save_path="models", vs_save_path="visualize"):
 
+    torch.autograd.set_detect_anomaly(True)
+
     if not os.path.exists(vs_save_path):
         os.makedirs(vs_save_path)
     if not os.path.exists(save_path):
@@ -30,9 +32,9 @@ def train_models(blur_generator, discriminator, clear_generator,
     l2_loss = nn.MSELoss()
     adversarial_loss = nn.BCEWithLogitsLoss()
 
-    optimizer_blur_gen = optim.Adam(blur_generator.parameters(), lr=0.0002, betas=(0.5, 0.999))
-    optimizer_clear_gen = optim.Adam(clear_generator.parameters(), lr=0.0002, betas=(0.5, 0.999))
-    optimizer_disc = optim.Adam(discriminator.parameters(), lr=0.0001, betas=(0.5, 0.999))
+    optimizer_blur_gen = optim.Adam(blur_generator.parameters(), lr=2e-5, betas=(0.5, 0.999))
+    optimizer_clear_gen = optim.Adam(clear_generator.parameters(), lr=2e-5, betas=(0.5, 0.999))
+    optimizer_disc = optim.Adam(discriminator.parameters(), lr=1e-5, betas=(0.5, 0.999))
 
     scheduler_blur_gen = optim.lr_scheduler.StepLR(optimizer_blur_gen, step_size=20, gamma=0.5)
     scheduler_clear_gen = optim.lr_scheduler.StepLR(optimizer_clear_gen, step_size=20, gamma=0.5)
