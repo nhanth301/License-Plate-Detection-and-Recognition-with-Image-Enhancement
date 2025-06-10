@@ -120,10 +120,15 @@ class HybridBlurGenerator(nn.Module):
         
         kernel = torch.exp(-(xx**2 + yy**2) / (2 * sigma**2 + 1e-6))
         
+        # Thêm lại kẹp an toàn để tăng độ ổn định
+        exponent = torch.clamp(-(xx**2 + yy**2) / (2 * sigma**2 + 1e-6), max=0.0)
+        kernel = torch.exp(exponent)
+
         kernel_sum = torch.sum(kernel, dim=[1, 2], keepdim=True)
         kernel = kernel / (kernel_sum + 1e-6)
         
-        return kernel
+        # Sửa lỗi: trả về tensor 4D [B, 1, k, k]
+        return kernel.unsqueeze(1)
 
     def forward(self, clear_img, blur_img):
         flow_field, global_params = self.param_encoder(blur_img)
