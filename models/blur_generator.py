@@ -113,19 +113,28 @@ class HybridBlurGenerator(nn.Module):
         return blurred_reshaped.view(batch_size, num_channels, H, W)
 
     def create_simple_gaussian_kernel(self, sigma, kernel_size, device):
-        batch_size = sigma.size(0)
+        # Input sigma shape: [B, 1, 1, 1]
         
         ax = torch.arange(-(kernel_size // 2), kernel_size // 2 + 1, dtype=torch.float32, device=device)
         xx, yy = torch.meshgrid(ax, ax, indexing='xy')
         
-        exponent = -(xx**2 + yy**2) / (2 * sigma**2 + 1e-6)
+        # grid shape: [k, k]
+        grid = xx**2 + yy**2
         
-        exponent = torch.clamp(exponent, max=0.0)
-        kernel = torch.exp(exponent)
+        # sigma_reshaped: [B, 1, 1]
+        sigma_reshaped = sigma.view(-1, 1, 1)
 
+        # Broadcasting [k, k] với [B, 1, 1] -> kết quả là [B, k, k]
+        exponent = -grid / (2 * sigma_reshaped**2 + 1e-6)
+        exponent = torch.clamp(exponent, max=0.0)
+        
+        kernel = torch.exp(exponent)
+        
+        # Chuẩn hóa từng kernel trong batch
         kernel_sum = torch.sum(kernel, dim=[1, 2], keepdim=True)
         kernel = kernel / (kernel_sum + 1e-6)
         
+        # Trả về tensor 4D [B, 1, k, k] để tương thích với F.conv2d
         return kernel.unsqueeze(1)
 
     def forward(self, clear_img, blur_img):
