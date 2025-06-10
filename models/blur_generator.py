@@ -123,7 +123,7 @@ class HybridBlurGenerator(nn.Module):
         kernel_sum = torch.sum(kernel, dim=[1, 2], keepdim=True)
         kernel = kernel / (kernel_sum + 1e-6)
         
-        return kernel.unsqueeze(1)
+        return kernel
 
     def forward(self, clear_img, blur_img):
         flow_field, global_params = self.param_encoder(blur_img)
