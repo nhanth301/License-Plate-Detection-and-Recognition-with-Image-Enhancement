@@ -119,7 +119,7 @@ def train_models(blur_generator, discriminator, clear_generator,
                 
                 k_reg_loss = kernel_regularization_loss(blur_kernel)
                 
-                total_gen_and_sr_loss = gen_adv_loss + 0.05 * content_loss + sr_loss + 0.0001 * k_reg_loss
+                total_gen_and_sr_loss = gen_adv_loss + 0.2 * content_loss + 1.5*sr_loss + 0.0001 * k_reg_loss
                 
                 total_gen_and_sr_loss.backward()
                 optimizer_blur_gen.step()
