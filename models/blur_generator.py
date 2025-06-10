@@ -3,139 +3,133 @@ import torch.nn as nn
 import torch.nn.functional as F
 import math
 
-class AttentionGenerator(nn.Module):
-    def __init__(self, in_channels=3, mid_channels=32):
-        super(AttentionGenerator, self).__init__()
-        self.network = nn.Sequential(
-            nn.Conv2d(in_channels, mid_channels, kernel_size=3, padding=1),
-            nn.ReLU(inplace=True),
-            nn.Conv2d(mid_channels, mid_channels, kernel_size=3, padding=1),
-            nn.ReLU(inplace=True),
-            nn.Conv2d(mid_channels, 1, kernel_size=1, padding=0),
-            nn.Sigmoid()
+class ConvBlock(nn.Module):
+    def __init__(self, in_channels, out_channels):
+        super(ConvBlock, self).__init__()
+        self.conv = nn.Sequential(
+            nn.Conv2d(in_channels, out_channels, kernel_size=3, padding=1, bias=False),
+            nn.BatchNorm2d(out_channels),
+            nn.LeakyReLU(0.2, inplace=True),
+            nn.Conv2d(out_channels, out_channels, kernel_size=3, padding=1, bias=False),
+            nn.BatchNorm2d(out_channels),
+            nn.LeakyReLU(0.2, inplace=True),
         )
 
     def forward(self, x):
-        return self.network(x)
+        return self.conv(x)
 
-def create_gaussian_kernel(params, kernel_size):
-    batch_size = params.size(0)
-    device = params.device
-    
-    mu_x = params[:, 0].unsqueeze(-1).unsqueeze(-1) * (kernel_size // 4)
-    mu_y = params[:, 1].unsqueeze(-1).unsqueeze(-1) * (kernel_size // 4)
-    sigma_x = (torch.sigmoid(params[:, 2]) * (kernel_size / 2) + 0.5).unsqueeze(-1).unsqueeze(-1)
-    sigma_y = (torch.sigmoid(params[:, 3]) * (kernel_size / 2) + 0.5).unsqueeze(-1).unsqueeze(-1)
-    theta = (torch.tanh(params[:, 4]) * math.pi).unsqueeze(-1).unsqueeze(-1)
-
-    ax = torch.arange(-(kernel_size // 2), kernel_size // 2 + 1, dtype=torch.float32, device=device)
-    xx, yy = torch.meshgrid(ax, ax, indexing='xy')
-    xx = xx.expand(batch_size, -1, -1)
-    yy = yy.expand(batch_size, -1, -1)
-    
-    x = xx - mu_x
-    y = yy - mu_y
-
-    cos_t = torch.cos(theta)
-    sin_t = torch.sin(theta)
-    x_rot = x * cos_t + y * sin_t
-    y_rot = -x * sin_t + y * cos_t
-
-    a = 1.0 / (2.0 * sigma_x**2 + 1e-6)
-    b = 1.0 / (2.0 * sigma_y**2 + 1e-6)
-    exponent = - (a * x_rot**2 + b * y_rot**2)
-    
-    exponent = torch.clamp(exponent, max=0.0)
-    
-    kernel = torch.exp(exponent)
-
-    kernel_sum = torch.sum(kernel, dim=[1, 2], keepdim=True)
-    kernel = kernel / (kernel_sum + 1e-6)
-    
-    return kernel.unsqueeze(1)
-
-class KernelParameterEncoder(nn.Module):
-    def __init__(self, in_channels=3, feature_dim=64, num_kernels=5, params_per_kernel=5):
-        super(KernelParameterEncoder, self).__init__()
-        self.num_kernels = num_kernels
-        self.params_per_kernel = params_per_kernel
-
-        self.encoder = nn.Sequential(
-            nn.Conv2d(in_channels, feature_dim, kernel_size=3, padding=1, stride=2),
-            nn.LeakyReLU(0.2, inplace=True),
-            nn.Conv2d(feature_dim, feature_dim * 2, kernel_size=3, padding=1, stride=2),
-            nn.BatchNorm2d(feature_dim * 2),
-            nn.LeakyReLU(0.2, inplace=True),
-            nn.Conv2d(feature_dim * 2, feature_dim * 4, kernel_size=3, padding=1, stride=2),
-            nn.BatchNorm2d(feature_dim * 4),
-            nn.LeakyReLU(0.2, inplace=True),
-        )
-        self.global_avg_pool = nn.AdaptiveAvgPool2d((1, 1))
+class HybridParameterEncoder(nn.Module):
+    def __init__(self, in_channels=3, features=[64, 128, 256]):
+        super(HybridParameterEncoder, self).__init__()
         
-        self.fc_params = nn.Sequential(
-            nn.Linear(feature_dim * 4, feature_dim * 4),
-            nn.LeakyReLU(0.2, inplace=True),
-            nn.Linear(feature_dim * 4, num_kernels * params_per_kernel)
-        )
+        self.downs = nn.ModuleList()
+        for feature in features:
+            self.downs.append(ConvBlock(in_channels, feature))
+            in_channels = feature
+        self.pool = nn.MaxPool2d(kernel_size=2, stride=2)
         
-        self.fc_weights = nn.Sequential(
-            nn.Linear(feature_dim * 4, feature_dim),
-            nn.LeakyReLU(0.2, inplace=True),
-            nn.Linear(feature_dim, num_kernels)
-        )
+        self.bottleneck = ConvBlock(features[-1], features[-1] * 2)
         
-    def forward(self, attended_blur_img):
-        features = self.encoder(attended_blur_img)
-        pooled_features = self.global_avg_pool(features)
-        flattened_features = pooled_features.view(pooled_features.size(0), -1)
-        raw_params = self.fc_params(flattened_features)
-        raw_weights = self.fc_weights(flattened_features)
-        normalized_weights = F.softmax(raw_weights, dim=1)
-        return raw_params, normalized_weights
+        self.global_param_head = nn.Sequential(
+            nn.AdaptiveAvgPool2d((1, 1)),
+            nn.Flatten(),
+            nn.Linear(features[-1] * 2, 256),
+            nn.LeakyReLU(0.2, inplace=True),
+            nn.Linear(256, 1 + 1 + 2)
+        )
 
-class BlurGenerator(nn.Module):
-    def __init__(self, in_channels=3, feature_dim=64, kernel_size=11, num_kernels=5):
-        super(BlurGenerator, self).__init__()
+        self.ups = nn.ModuleList()
+        for feature in reversed(features):
+            self.ups.append(nn.ConvTranspose2d(feature * 2, feature, kernel_size=2, stride=2))
+            self.ups.append(ConvBlock(feature * 2, feature))
+            
+        self.final_flow_conv = nn.Conv2d(features[0], 2, kernel_size=1)
+
+    def forward(self, x):
+        skip_connections = []
+        
+        for down in self.downs:
+            x = down(x)
+            skip_connections.append(x)
+            x = self.pool(x)
+            
+        x = self.bottleneck(x)
+        
+        global_params = self.global_param_head(x)
+        
+        skip_connections = skip_connections[::-1]
+        for i in range(0, len(self.ups), 2):
+            x = self.ups[i](x)
+            skip_connection = skip_connections[i//2]
+            if x.shape != skip_connection.shape:
+                x = F.interpolate(x, size=skip_connection.shape[2:])
+            concat_skip = torch.cat((skip_connection, x), dim=1)
+            x = self.ups[i+1](concat_skip)
+            
+        flow_field = self.final_flow_conv(x)
+        
+        return flow_field, global_params
+
+class HybridBlurGenerator(nn.Module):
+    def __init__(self, in_channels=3, kernel_size=11, num_flow_steps=7):
+        super(HybridBlurGenerator, self).__init__()
+        self.param_encoder = HybridParameterEncoder(in_channels=in_channels)
         self.kernel_size = kernel_size
-        self.num_kernels = num_kernels
-        self.params_per_kernel = 5
+        self.num_flow_steps = num_flow_steps
 
-        self.attention_gen = AttentionGenerator(in_channels=in_channels)
-        self.param_encoder = KernelParameterEncoder(
-            in_channels=in_channels, 
-            feature_dim=feature_dim, 
-            num_kernels=num_kernels,
-            params_per_kernel=self.params_per_kernel
-        )
+    def apply_flow_blur(self, img, flow_field):
+        B, C, H, W = img.shape
+        grid_y, grid_x = torch.meshgrid(torch.linspace(-1, 1, H, device=img.device), 
+                                        torch.linspace(-1, 1, W, device=img.device), indexing='ij')
+        grid = torch.stack((grid_x, grid_y), 2).unsqueeze(0).repeat(B, 1, 1, 1)
+
+        warped_images = []
+        for t in range(self.num_flow_steps):
+            step = (t + 1) / self.num_flow_steps
+            scaled_flow = flow_field.permute(0, 2, 3, 1) * step
+            new_grid = grid + scaled_flow
+            warped_img = F.grid_sample(img, new_grid, mode='bilinear', padding_mode='border', align_corners=True)
+            warped_images.append(warped_img)
         
-        self.padding = (self.kernel_size - 1) // 2
+        return torch.mean(torch.stack(warped_images), dim=0)
+
+    def apply_focus_blur(self, img, kernel_sigma):
+        kernel = self.create_simple_gaussian_kernel(kernel_sigma, self.kernel_size, img.device)
+        padding = (self.kernel_size - 1) // 2
+        
+        blurred_channels = []
+        for i in range(img.size(1)):
+            channel_blur = F.conv2d(img[:, i:i+1], kernel, padding=padding)
+            blurred_channels.append(channel_blur)
+        return torch.cat(blurred_channels, dim=1)
+
+    def create_simple_gaussian_kernel(self, sigma, kernel_size, device):
+        ax = torch.arange(-(kernel_size // 2), kernel_size // 2 + 1, dtype=torch.float32, device=device)
+        xx, yy = torch.meshgrid(ax, ax, indexing='xy')
+        kernel = torch.exp(-(xx**2 + yy**2) / (2 * sigma**2 + 1e-6))
+        return (kernel / kernel.sum()).unsqueeze(0).unsqueeze(0)
 
     def forward(self, clear_img, blur_img):
-        batch_size = blur_img.size(0)
-        attention_map = self.attention_gen(blur_img)
-        attention_map_3_channels = attention_map.repeat(1, blur_img.size(1), 1, 1)
-        attended_blur_img = blur_img * attention_map_3_channels
-        raw_params, weights = self.param_encoder(attended_blur_img)
-        params = raw_params.view(batch_size, self.num_kernels, self.params_per_kernel)
-        final_kernel = torch.zeros(batch_size, 1, self.kernel_size, self.kernel_size).to(blur_img.device)
+        flow_field, global_params = self.param_encoder(blur_img)
         
-        for i in range(self.num_kernels):
-            kernel_params_i = params[:, i, :]
-            weight_i = weights[:, i].view(-1, 1, 1, 1)
-            basis_kernel_i = create_gaussian_kernel(kernel_params_i, self.kernel_size)
-            final_kernel += weight_i * basis_kernel_i
-            
-        _, num_channels, H, W = clear_img.shape
-        clear_img_reshaped = clear_img.view(1, batch_size * num_channels, H, W)
-        repeated_kernel = final_kernel.repeat(1, num_channels, 1, 1)
-        repeated_kernel_reshaped = repeated_kernel.view(batch_size * num_channels, 1, self.kernel_size, self.kernel_size)
+        noise_sigma = torch.sigmoid(global_params[:, 0]).view(-1, 1, 1, 1) * 0.1
+        kernel_sigma = (torch.sigmoid(global_params[:, 1]) * 2.0 + 0.1).view(-1, 1, 1, 1)
+        color_alpha = (global_params[:, 2] * 0.2 + 1.0).view(-1, 1, 1, 1)
+        color_beta = (global_params[:, 3] * 0.1).view(-1, 1, 1, 1)
 
-        fake_blur_reshaped = F.conv2d(
-            input=clear_img_reshaped, 
-            weight=repeated_kernel_reshaped, 
-            padding=self.padding, 
-            groups=batch_size * num_channels
-        )
-        fake_blur = fake_blur_reshaped.view(batch_size, num_channels, H, W)
+        x = clear_img
         
-        return torch.sigmoid(fake_blur), final_kernel
+        x = self.apply_flow_blur(x, flow_field)
+        
+        x = self.apply_focus_blur(x, kernel_sigma)
+
+        noise = torch.randn_like(x) * noise_sigma
+        x = x + noise
+
+        x = x * color_alpha + color_beta
+        
+        fake_blur = torch.tanh(x)
+
+        degradation_params = {"flow": flow_field, "noise": noise_sigma, "kernel_sigma": kernel_sigma}
+        
+        return fake_blur, degradation_params

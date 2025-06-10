@@ -22,9 +22,10 @@ class MyDataset(Dataset):
 
         self.transform = transforms.Compose([
             transforms.Resize(image_size),
-            transforms.ToTensor()
+            transforms.ToTensor(),
+            transforms.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5])
         ])
-
+        
         self.total = len(self.clear_images) * len(self.blur_images)
 
     def __len__(self):

@@ -16,10 +16,10 @@ class LPSR(nn.Module):
             kernel_size=3,
             padding=1,
         )
-        self.sigmoid = nn.Sigmoid()
+        self.act = nn.Tanh()
 
     def forward(self, x):
         x = self.auto_encoder(x)
         x = self.rdn(x)
         x = self.final_conv(x)
-        return self.sigmoid(x)
+        return self.act(x)

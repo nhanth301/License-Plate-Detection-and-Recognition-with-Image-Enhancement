@@ -130,6 +130,7 @@ def train_gan(blur_generator, discriminator, dataloader, num_epochs, device,
             real_blur_cpu = blur_img[0].detach().cpu()
 
             def denormalize(img_tensor):
+                img_tensor = img_tensor * 0.5 + 0.5
                 img_tensor = img_tensor.clamp(0, 1)
                 return img_tensor.permute(1, 2, 0).numpy()
 

@@ -8,7 +8,7 @@ import argparse
 import matplotlib.pyplot as plt
 from torch.nn import functional as F
 from models.clear_generator import LPSR
-from models.blur_generator import BlurGenerator 
+from models.blur_generator import HybridBlurGenerator 
 from models.discriminator import Discriminator
 from torchvision import models
 from tqdm import tqdm
@@ -159,6 +159,7 @@ def train_models(blur_generator, discriminator, clear_generator,
             sr_img_cpu = sr_img_vis[0].detach().cpu()
 
             def denormalize(img_tensor):
+                img_tensor = img_tensor * 0.5 + 0.5
                 img_tensor = img_tensor.clamp(0, 1)
                 return img_tensor.permute(1, 2, 0).numpy()
 
@@ -177,11 +178,7 @@ def main(args):
     dataset = MyDataset(args.clear_folder, args.blur_folder, image_size=(64, 128))
     dataloader = DataLoader(dataset, batch_size=args.batch_size, shuffle=True, num_workers=4, pin_memory=True)
 
-    blur_generator = BlurGenerator(
-        in_channels=3, 
-        feature_dim=64, 
-        kernel_size=args.kernel_size
-    ).to(device)
+    blur_generator = HybridBlurGenerator(kernel_size=args.kernel_size).to(device)
     
     clear_generator = LPSR(
         num_channels=3,
