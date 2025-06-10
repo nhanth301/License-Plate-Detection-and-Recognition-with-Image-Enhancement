@@ -3,20 +3,20 @@ import torch.optim as optim
 import torch.nn as nn
 from dataset.my_dataset import MyDataset
 from torch.utils.data import DataLoader
-import os 
+import os
 import argparse
 import matplotlib.pyplot as plt
 from torch.nn import functional as F
 from models.clear_generator import LPSR
-from models.blur_generator import HybridBlurGenerator 
+from models.hybrid_blur_generator import HybridBlurGenerator
 from models.discriminator import Discriminator
 from torchvision import models
 from tqdm import tqdm
 
-def kernel_regularization_loss(kernel):
-    tv_h = torch.sum(torch.abs(kernel[:, :, 1:, :] - kernel[:, :, :-1, :]))
-    tv_w = torch.sum(torch.abs(kernel[:, :, :, 1:] - kernel[:, :, :, :-1]))
-    return tv_h + tv_w
+def flow_regularization_loss(flow_field):
+    dx_tv = torch.sum(torch.abs(flow_field[:, 0, :, 1:] - flow_field[:, 0, :, :-1]))
+    dy_tv = torch.sum(torch.abs(flow_field[:, 1, 1:, :] - flow_field[:, 1, :-1, :]))
+    return dx_tv + dy_tv
 
 def compute_gradient_penalty(discriminator, real_samples, fake_samples, device):
     alpha = torch.randn(real_samples.size(0), 1, 1, 1, device=device)
@@ -60,12 +60,14 @@ def train_models(blur_generator, discriminator, clear_generator,
     vgg_content_layers = vgg[:22]
 
     def perceptual_loss(img1, img2):
+        img1_norm = (img1 - 0.5) / 0.5
+        img2_norm = (img2 - 0.5) / 0.5
         vgg_mean = torch.tensor([0.485, 0.456, 0.406], device=img1.device).view(1, 3, 1, 1)
         vgg_std = torch.tensor([0.229, 0.224, 0.225], device=img1.device).view(1, 3, 1, 1)
-        img1_norm = (img1 - vgg_mean) / vgg_std
-        img2_norm = (img2 - vgg_mean) / vgg_std
-        feat1 = vgg(img1_norm)
-        feat2 = vgg(img2_norm)
+        img1_vgg = (img1_norm - vgg_mean) / vgg_std
+        img2_vgg = (img2_norm - vgg_mean) / vgg_std
+        feat1 = vgg(img1_vgg)
+        feat2 = vgg(img2_vgg)
         return F.l1_loss(feat1, feat2)
     
     best_sr_loss = float('inf')
@@ -78,7 +80,9 @@ def train_models(blur_generator, discriminator, clear_generator,
         total_gen_loss = 0
         total_disc_loss = 0
         total_sr_loss = 0
+        
         progress_bar = tqdm(dataloader, desc=f"Epoch {epoch+1}/{num_epochs}", leave=True)
+
         for batch_idx, (clear_img, blur_img) in enumerate(progress_bar):
             clear_img, blur_img = clear_img.to(device), blur_img.to(device)
             
@@ -103,7 +107,7 @@ def train_models(blur_generator, discriminator, clear_generator,
                 optimizer_blur_gen.zero_grad()
                 optimizer_clear_gen.zero_grad()
                 
-                fake_blur, blur_kernel = blur_generator(clear_img, blur_img)
+                fake_blur, degradation_params = blur_generator(clear_img, blur_img)
                 fake_output_for_gen = discriminator(fake_blur)
                 
                 gen_adv_loss = -torch.mean(fake_output_for_gen)
@@ -117,9 +121,10 @@ def train_models(blur_generator, discriminator, clear_generator,
                 sr_perc_loss = perceptual_loss(hr_output, clear_img)
                 sr_loss = sr_recon_loss + 0.1 * sr_perc_loss
                 
-                k_reg_loss = kernel_regularization_loss(blur_kernel)
+                flow_field = degradation_params["flow"]
+                flow_reg_loss = flow_regularization_loss(flow_field)
                 
-                total_gen_and_sr_loss = gen_adv_loss + 0.2 * content_loss + 1.5*sr_loss + 0.0001 * k_reg_loss
+                total_gen_and_sr_loss = gen_adv_loss + 0.2 * content_loss + 1.5 * sr_loss + 0.005 * flow_reg_loss
                 
                 total_gen_and_sr_loss.backward()
                 optimizer_blur_gen.step()
@@ -127,19 +132,25 @@ def train_models(blur_generator, discriminator, clear_generator,
                 
                 total_gen_loss += gen_adv_loss.item()
                 total_sr_loss += sr_loss.item()
+                
+                progress_bar.set_postfix(
+                    disc_loss=f"{disc_loss.item():.4f}", 
+                    gen_loss=f"{gen_adv_loss.item():.4f}",
+                    sr_loss=f"{sr_loss.item():.4f}"
+                )
 
         avg_gen_loss = total_gen_loss / (len(dataloader) / n_critic) if total_gen_loss != 0 else 0
         avg_disc_loss = total_disc_loss / len(dataloader)
         avg_sr_loss = total_sr_loss / (len(dataloader) / n_critic) if total_sr_loss != 0 else 0
 
-        print(f"Epoch {epoch+1}/{num_epochs}, Gen Loss: {avg_gen_loss:.4f}, Disc Loss: {avg_disc_loss:.4f}, SR Loss: {avg_sr_loss:.4f}")
+        tqdm.write(f"Epoch {epoch+1}/{num_epochs} Summary -> Gen Loss: {avg_gen_loss:.4f}, Disc Loss: {avg_disc_loss:.4f}, SR Loss: {avg_sr_loss:.4f}")
 
         if avg_sr_loss < best_sr_loss and avg_sr_loss != 0:
             best_sr_loss = avg_sr_loss
             torch.save(blur_generator.state_dict(), os.path.join(save_path, "best_blur_generator.pth"))
             torch.save(clear_generator.state_dict(), os.path.join(save_path, "best_clear_generator.pth"))
             torch.save(discriminator.state_dict(), os.path.join(save_path, "best_discriminator.pth"))
-            print(f"Saved best models at epoch {epoch+1}")
+            tqdm.write(f"Saved best models at epoch {epoch+1}")
 
         if (epoch + 1) % 20 == 0:
             torch.save(blur_generator.state_dict(), os.path.join(save_path, f"generator_{epoch+1}.pth"))
@@ -207,7 +218,7 @@ if __name__ == "__main__":
     parser.add_argument("--n_critic", type=int, default=5, help="Number of critic updates per generator update")
     parser.add_argument("--clear_folder", type=str, required=True, help="Path to clear image folder")
     parser.add_argument("--blur_folder", type=str, required=True, help="Path to blurred image folder")
-    parser.add_argument("--save_path", type=str, default="ckpts_wgan", help="Path to save trained model checkpoints")
-    parser.add_argument("--vs_save_path", type=str, default="visualize_wgan", help="Path to save visualization outputs")
+    parser.add_argument("--save_path", type=str, default="ckpts_hybrid", help="Path to save trained model checkpoints")
+    parser.add_argument("--vs_save_path", type=str, default="visualize_hybrid", help="Path to save visualization outputs")
     args = parser.parse_args()
     main(args)

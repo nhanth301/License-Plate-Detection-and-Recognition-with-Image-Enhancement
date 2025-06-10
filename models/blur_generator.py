@@ -94,20 +94,36 @@ class HybridBlurGenerator(nn.Module):
         return torch.mean(torch.stack(warped_images), dim=0)
 
     def apply_focus_blur(self, img, kernel_sigma):
+        batch_size, num_channels, H, W = img.shape
+        
         kernel = self.create_simple_gaussian_kernel(kernel_sigma, self.kernel_size, img.device)
+        
         padding = (self.kernel_size - 1) // 2
         
-        blurred_channels = []
-        for i in range(img.size(1)):
-            channel_blur = F.conv2d(img[:, i:i+1], kernel, padding=padding)
-            blurred_channels.append(channel_blur)
-        return torch.cat(blurred_channels, dim=1)
+        img_reshaped = img.view(1, batch_size * num_channels, H, W)
+        kernel_reshaped = kernel.repeat(1, num_channels, 1, 1).view(batch_size * num_channels, 1, self.kernel_size, self.kernel_size)
+        
+        blurred_reshaped = F.conv2d(
+            input=img_reshaped,
+            weight=kernel_reshaped,
+            padding=padding,
+            groups=batch_size * num_channels
+        )
+        
+        return blurred_reshaped.view(batch_size, num_channels, H, W)
 
     def create_simple_gaussian_kernel(self, sigma, kernel_size, device):
+        batch_size = sigma.size(0)
+        
         ax = torch.arange(-(kernel_size // 2), kernel_size // 2 + 1, dtype=torch.float32, device=device)
         xx, yy = torch.meshgrid(ax, ax, indexing='xy')
-        kernel = torch.exp(-(xx**2 + yy**2) / (2 * sigma**2 + 1e-6))
-        return (kernel / kernel.sum()).unsqueeze(0).unsqueeze(0)
+        
+        kernel = torch.exp(-(xx**2 + yy**2) / (2 * sigma.squeeze()**2 + 1e-6))
+        
+        kernel_sum = torch.sum(kernel, dim=[1, 2], keepdim=True)
+        kernel = kernel / (kernel_sum + 1e-6)
+        
+        return kernel.unsqueeze(1)
 
     def forward(self, clear_img, blur_img):
         flow_field, global_params = self.param_encoder(blur_img)
@@ -118,17 +134,13 @@ class HybridBlurGenerator(nn.Module):
         color_beta = (global_params[:, 3] * 0.1).view(-1, 1, 1, 1)
 
         x = clear_img
-        
         x = self.apply_flow_blur(x, flow_field)
-        
         x = self.apply_focus_blur(x, kernel_sigma)
-
         noise = torch.randn_like(x) * noise_sigma
         x = x + noise
-
         x = x * color_alpha + color_beta
         
-        fake_blur = torch.tanh(x)
+        fake_blur = torch.sigmoid(x)
 
         degradation_params = {"flow": flow_field, "noise": noise_sigma, "kernel_sigma": kernel_sigma}
         
