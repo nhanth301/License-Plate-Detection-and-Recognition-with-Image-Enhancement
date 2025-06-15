@@ -12,10 +12,10 @@ from models.discriminator import Discriminator
 from torchvision import models
 from tqdm import tqdm
 
-def kernel_regularization_loss(kernel):
-    tv_h = torch.sum(torch.abs(kernel[:, :, 1:, :] - kernel[:, :, :-1, :]))
-    tv_w = torch.sum(torch.abs(kernel[:, :, :, 1:] - kernel[:, :, :, :-1]))
-    return tv_h + tv_w
+def flow_regularization_loss(flow_field):
+    dx_tv = torch.sum(torch.abs(flow_field[:, 0, :, 1:] - flow_field[:, 0, :, :-1]))
+    dy_tv = torch.sum(torch.abs(flow_field[:, 1, 1:, :] - flow_field[:, 1, :-1, :]))
+    return dx_tv + dy_tv
 
 def compute_gradient_penalty(discriminator, real_samples, fake_samples, device):
     alpha = torch.randn(real_samples.size(0), 1, 1, 1, device=device)
@@ -87,7 +87,7 @@ def train_gan(blur_generator, discriminator, dataloader, num_epochs, device,
             if (batch_idx + 1) % n_critic == 0:
                 optimizer_blur_gen.zero_grad()
                 
-                fake_blur, blur_kernel = blur_generator(clear_img, blur_img)
+                fake_blur, degradation_params = blur_generator(clear_img, blur_img)
                 fake_output_for_gen = discriminator(fake_blur)
                 
                 gen_adv_loss = -torch.mean(fake_output_for_gen)
@@ -95,10 +95,10 @@ def train_gan(blur_generator, discriminator, dataloader, num_epochs, device,
                 clear_feats_content = vgg_content_layers(clear_img)
                 fake_feats_content = vgg_content_layers(fake_blur)
                 content_loss =  l1_loss(fake_feats_content, clear_feats_content)
+                flow_field = degradation_params["flow"]
+                flow_reg_loss =  flow_regularization_loss(flow_field )
                 
-                k_reg_loss = kernel_regularization_loss(blur_kernel)
-                
-                total_gen_loss_step = gen_adv_loss + 0.05 * content_loss + 0.0001 * k_reg_loss
+                total_gen_loss_step = gen_adv_loss + 0.05 * content_loss + 0.0001 * flow_reg_loss
                 
                 total_gen_loss_step.backward()
                 optimizer_blur_gen.step()
