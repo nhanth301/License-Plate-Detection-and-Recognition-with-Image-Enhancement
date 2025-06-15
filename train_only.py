@@ -7,7 +7,7 @@ import os
 import argparse
 import matplotlib.pyplot as plt
 from torch.nn import functional as F
-from models.blur_generator import BlurGenerator
+from models.blur_generator import HybridBlurGenerator
 from models.discriminator import Discriminator
 from torchvision import models
 from tqdm import tqdm
@@ -148,11 +148,7 @@ def main(args):
     dataset = MyDataset(args.clear_folder, args.blur_folder, image_size=(64, 128))
     dataloader = DataLoader(dataset, batch_size=args.batch_size, shuffle=True, num_workers=4, pin_memory=True)
 
-    blur_generator = BlurGenerator(
-        in_channels=3, 
-        feature_dim=64, 
-        kernel_size=args.kernel_size
-    ).to(device)
+    blur_generator = HybridBlurGenerator(kernel_size=args.kernel_size).to(device)
     
     discriminator = Discriminator(in_channels=3).to(device)
 
