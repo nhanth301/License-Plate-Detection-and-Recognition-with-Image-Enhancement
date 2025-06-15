@@ -48,10 +48,11 @@ class Generator(nn.Module):
 
         out_features = in_features // 2
         for _ in range(2):
-            model += [  nn.Conv2d(in_features, out_features * 4, kernel_size=3, padding=1, bias=True),
-                        nn.InstanceNorm2d(out_features * 4),
-                        nn.ReLU(True),
-                        nn.PixelShuffle(2) ]
+            model += [  
+                        nn.Upsample(scale_factor=2, mode='nearest'),
+                        nn.Conv2d(in_features, out_features, kernel_size=3, padding=1, bias=True),
+                        nn.InstanceNorm2d(out_features),
+                        nn.ReLU(True) ]
             in_features = out_features
             out_features //= 2
 

@@ -116,9 +116,9 @@ def train(args):
 
             # Cycle loss
             recons_A = netG_BtoA(fake_B)
-            loss_cycle_A = criterion_cycle(recons_A, real_A) * 15.0
+            loss_cycle_A = criterion_cycle(recons_A, real_A) * 12.0
             recons_B = netG_AtoB(fake_A)
-            loss_cycle_B = criterion_cycle(recons_B, real_B) * 15.0
+            loss_cycle_B = criterion_cycle(recons_B, real_B) * 12.0
 
             # Total loss
             loss_G = loss_identity_A + loss_identity_B + loss_GAN_AtoB + loss_GAN_BtoA + loss_cycle_A + loss_cycle_B
