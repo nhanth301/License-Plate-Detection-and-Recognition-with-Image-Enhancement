@@ -100,7 +100,7 @@ def train_gan(blur_generator, discriminator, dataloader, num_epochs, device,
                 flow_field = degradation_params["flow"]
                 flow_reg_loss =  flow_regularization_loss(flow_field )
                 print(f"Content Loss: {content_loss.item():.4f}, Flow Reg Loss: {flow_reg_loss.item():.4f}, Gen Adv Loss: {gen_adv_loss.item():.4f}")
-                total_gen_loss_step = gen_adv_loss + 0.05 * content_loss + 0.0001 * flow_reg_loss
+                total_gen_loss_step = 0.1* gen_adv_loss + content_loss + 0.000001 * flow_reg_loss
                 
                 total_gen_loss_step.backward()
                 optimizer_blur_gen.step()
