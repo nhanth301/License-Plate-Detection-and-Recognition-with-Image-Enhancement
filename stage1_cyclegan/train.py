@@ -27,7 +27,6 @@ class ImageDataset(Dataset):
 
     def __getitem__(self, index):
         img_A = Image.open(self.files_A[index % len(self.files_A)]).convert('RGB')
-        # In CycleGAN, we load a random image from the other domain
         img_B = Image.open(self.files_B[random.randint(0, len(self.files_B) - 1)]).convert('RGB')
         
         return self.transform(img_A), self.transform(img_B)
@@ -159,27 +158,28 @@ def train(args):
             
             progress_bar.set_postfix(G_loss=f"{loss_G.item():.4f}", D_loss=f"{(loss_D_A + loss_D_B).item():.4f}")
 
-        # === START: VISUALIZATION BLOCK ===
+        # === START: VISUALIZATION BLOCK (Corrected) ===
         with torch.no_grad():
             netG_AtoB.eval()
             netG_BtoA.eval()
 
-            # Generate images for visualization using the last batch
-            vis_real_A = real_A.cpu()
-            vis_fake_B = netG_AtoB(real_A).cpu()
-            vis_recons_A = netG_BtoA(vis_fake_B).cpu()
+            # All computations happen on the primary `device` (GPU)
+            fake_B = netG_AtoB(real_A)
+            recons_A = netG_BtoA(fake_B)
+            fake_A = netG_BtoA(real_B)
+            recons_B = netG_AtoB(fake_A)
 
-            vis_real_B = real_B.cpu()
-            vis_fake_A = netG_BtoA(real_B).cpu()
-            vis_recons_B = netG_AtoB(vis_fake_A).cpu()
-
-            # Take the first image of the batch for plotting
+            # Move tensors to CPU *only when* preparing for plotting
             img_list = [
-                denormalize(vis_real_A[0]), denormalize(vis_fake_B[0]), denormalize(vis_recons_A[0]),
-                denormalize(vis_real_B[0]), denormalize(vis_fake_A[0]), denormalize(vis_recons_B[0])
+                denormalize(real_A[0].cpu()),
+                denormalize(fake_B[0].cpu()),
+                denormalize(recons_A[0].cpu()),
+                denormalize(real_B[0].cpu()),
+                denormalize(fake_A[0].cpu()),
+                denormalize(recons_B[0].cpu())
             ]
-            titles = ['Real Clear', 'Fake Blur', 'Reconstructed Clear',
-                      'Real Blur', 'Fake Clear', 'Reconstructed Blur']
+            titles = ['Real Clear (A)', 'Fake Blur (B)', 'Reconstructed Clear (A)',
+                      'Real Blur (B)', 'Fake Clear (A)', 'Reconstructed Blur (B)']
             
             fig, axs = plt.subplots(2, 3, figsize=(18, 12))
             fig.suptitle(f'Epoch: {epoch+1}', fontsize=16)
@@ -192,11 +192,11 @@ def train(args):
             plt.savefig(os.path.join(args.output_dir, f'epoch_{epoch+1}.png'))
             plt.close()
 
-            # Set models back to training mode
+            # Set models back to training mode for the next epoch
             netG_AtoB.train()
             netG_BtoA.train()
         # === END: VISUALIZATION BLOCK ===
-
+        
         # Save model checkpoints
         torch.save(netG_AtoB.state_dict(), os.path.join(args.checkpoint_dir, f'netG_AtoB_epoch_{epoch+1}.pth'))
         torch.save(netG_BtoA.state_dict(), os.path.join(args.checkpoint_dir, f'netG_BtoA_epoch_{epoch+1}.pth'))
