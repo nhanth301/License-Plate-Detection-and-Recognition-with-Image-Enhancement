@@ -92,7 +92,7 @@ def train(args):
         progress_bar = tqdm(enumerate(dataloader), total=len(dataloader), desc=f"Epoch {epoch+1}/{args.epochs}")
         for i, (real_A, real_B) in progress_bar:
             real_A, real_B = real_A.to(device), real_B.to(device)
-            
+            lambda_GAN = 2.0 
             # --- Train Generators ---
             optimizer_G.zero_grad()
             
@@ -108,11 +108,11 @@ def train(args):
             fake_B = netG_AtoB(real_A)
             pred_fake = netD_B(fake_B)
             target_real = torch.ones_like(pred_fake, requires_grad=False)
-            loss_GAN_AtoB = criterion_GAN(pred_fake, target_real)
+            loss_GAN_AtoB = criterion_GAN(pred_fake, target_real) * lambda_GAN
 
             fake_A = netG_BtoA(real_B)
             pred_fake = netD_A(fake_A)
-            loss_GAN_BtoA = criterion_GAN(pred_fake, target_real)
+            loss_GAN_BtoA = criterion_GAN(pred_fake, target_real) * lambda_GAN
 
             # Cycle loss
             recons_A = netG_BtoA(fake_B)

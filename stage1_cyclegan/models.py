@@ -70,26 +70,24 @@ class Discriminator(nn.Module):
     def __init__(self, in_channels=3):
         super(Discriminator, self).__init__()
 
-        # A bunch of convolutions one after another
-        model = [   nn.Conv2d(in_channels, 64, 4, stride=2, padding=1),
+        model = [   spectral_norm(nn.Conv2d(in_channels, 64, 4, stride=2, padding=1)),
                     nn.LeakyReLU(0.2, inplace=True) ]
 
-        model += [  nn.Conv2d(64, 128, 4, stride=2, padding=1, bias=False),
+        model += [  spectral_norm(nn.Conv2d(64, 128, 4, stride=2, padding=1, bias=False)),
                     nn.InstanceNorm2d(128),
                     nn.LeakyReLU(0.2, inplace=True) ]
 
-        model += [  nn.Conv2d(128, 256, 4, stride=2, padding=1, bias=False),
+        model += [  spectral_norm(nn.Conv2d(128, 256, 4, stride=2, padding=1, bias=False)),
                     nn.InstanceNorm2d(256),
                     nn.LeakyReLU(0.2, inplace=True) ]
 
-        model += [  nn.Conv2d(256, 512, 4, stride=1, padding=1, bias=False),
+        model += [  spectral_norm(nn.Conv2d(256, 512, 4, stride=1, padding=1, bias=False)),
                     nn.InstanceNorm2d(512),
                     nn.LeakyReLU(0.2, inplace=True) ]
 
-        # FCN classification layer
         model += [nn.Conv2d(512, 1, 4, stride=1, padding=1)]
 
         self.model = nn.Sequential(*model)
 
     def forward(self, x):
-        return self.model(x) 
+        return self.model(x)
