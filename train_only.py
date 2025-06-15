@@ -99,7 +99,7 @@ def train_gan(blur_generator, discriminator, dataloader, num_epochs, device,
                 content_loss =  l1_loss(fake_feats_content, clear_feats_content)
                 flow_field = degradation_params["flow"]
                 flow_reg_loss =  flow_regularization_loss(flow_field )
-                
+                print(f"Content Loss: {content_loss.item():.4f}, Flow Reg Loss: {flow_reg_loss.item():.4f}, Gen Adv Loss: {gen_adv_loss.item():.4f}")
                 total_gen_loss_step = gen_adv_loss + 0.05 * content_loss + 0.0001 * flow_reg_loss
                 
                 total_gen_loss_step.backward()
