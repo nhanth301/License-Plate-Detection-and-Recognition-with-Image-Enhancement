@@ -3,6 +3,9 @@ import torch
 import torch.nn as nn
 from torch.nn.utils import spectral_norm
 
+import torch
+import torch.nn as nn
+
 class ResnetBlock(nn.Module):
     def __init__(self, dim):
         super(ResnetBlock, self).__init__()
@@ -43,22 +46,19 @@ class Generator(nn.Module):
         for _ in range(n_resnet_blocks):
             model += [ResnetBlock(in_features)]
 
-        # Upsampling
         out_features = in_features // 2
         for _ in range(2):
-            model += [  nn.ConvTranspose2d(in_features, out_features,
-                                            kernel_size=3, stride=2,
-                                            padding=1, output_padding=1,
-                                            bias=True),
-                        nn.InstanceNorm2d(out_features),
-                        nn.ReLU(True) ]
+            model += [  nn.Conv2d(in_features, out_features * 4, kernel_size=3, padding=1, bias=True),
+                        nn.InstanceNorm2d(out_features * 4),
+                        nn.ReLU(True),
+                        nn.PixelShuffle(2) ]
             in_features = out_features
             out_features //= 2
 
         # Output layer
         model += [  nn.ReflectionPad2d(3),
                     nn.Conv2d(64, out_channels, kernel_size=7, padding=0),
-                    nn.Tanh() ] # Output ảnh trong khoảng [-1, 1]
+                    nn.Tanh() ]
 
         self.model = nn.Sequential(*model)
 
@@ -91,4 +91,4 @@ class Discriminator(nn.Module):
         self.model = nn.Sequential(*model)
 
     def forward(self, x):
-        return self.model(x) # Output là một bản đồ PatchGAN
+        return self.model(x) 
