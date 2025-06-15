@@ -198,8 +198,9 @@ def train(args):
         # === END: VISUALIZATION BLOCK ===
         
         # Save model checkpoints
-        torch.save(netG_AtoB.state_dict(), os.path.join(args.checkpoint_dir, f'netG_AtoB_epoch_{epoch+1}.pth'))
-        torch.save(netG_BtoA.state_dict(), os.path.join(args.checkpoint_dir, f'netG_BtoA_epoch_{epoch+1}.pth'))
+        if epoch % 50 == 0 or epoch == args.epochs - 1:
+            torch.save(netG_AtoB.state_dict(), os.path.join(args.checkpoint_dir, f'netG_AtoB_epoch_{epoch+1}.pth'))
+            torch.save(netG_BtoA.state_dict(), os.path.join(args.checkpoint_dir, f'netG_BtoA_epoch_{epoch+1}.pth'))
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
