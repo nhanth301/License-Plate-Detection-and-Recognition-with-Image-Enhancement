@@ -16,7 +16,7 @@ from utils import ImagePool
 
 # ImageDataset class remains the same
 class ImageDataset(Dataset):
-    def __init__(self, root, image_size=(64, 128)):
+    def __init__(self, root, image_size=(24, 192)):
         self.transform = transforms.Compose([
             transforms.Resize(image_size),
             transforms.ToTensor(),
@@ -207,8 +207,8 @@ if __name__ == '__main__':
     parser.add_argument("--dataroot", type=str, required=True, help="Path to the dataset root directory")
     parser.add_argument("--batch_size", type=int, default=1, help="Batch size")
     parser.add_argument("--lr", type=float, default=0.0002, help="Learning rate")
-    parser.add_argument("--height", type=int, default=64, help="Image height")
-    parser.add_argument("--width", type=int, default=128, help="Image width")
+    parser.add_argument("--height", type=int, default=24, help="Image height")
+    parser.add_argument("--width", type=int, default=192, help="Image width")
     parser.add_argument("--checkpoint_dir", type=str, default="checkpoints", help="Directory to save model checkpoints")
     parser.add_argument("--output_dir", type=str, default="output_images", help="Directory to save visualization images")
     args = parser.parse_args()
