@@ -1,0 +1,23 @@
+name: "ocr"
+backend: "onnxruntime"
+max_batch_size: 16
+
+input [
+  {
+    name: "input_image"
+    data_type: TYPE_FP32
+    dims: [ 3, 128, 128 ]
+  }
+]
+
+output [
+  {
+    name: "predictions"
+    data_type: TYPE_FP32
+    # SỬA LỖI: Ghi chính xác số lượng dự đoán mà model yêu cầu
+    dims: [ 512, 41 ] # Giả định bạn có 36 lớp ký tự (5 + 36 = 41)
+  }
+]
+
+instance_group [ { count: 2, kind: KIND_GPU } ]
+dynamic_batching { }

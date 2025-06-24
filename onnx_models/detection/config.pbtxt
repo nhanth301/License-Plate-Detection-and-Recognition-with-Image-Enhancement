@@ -1,0 +1,23 @@
+name: "detection"
+backend: "onnxruntime"
+max_batch_size: 4
+
+input [
+  {
+    name: "input_image"
+    data_type: TYPE_FP32
+    dims: [ 3, 1280, 1280 ]
+  }
+]
+
+output [
+  {
+    name: "predictions"
+    data_type: TYPE_FP32
+    # SỬA LỖI: Ghi chính xác số lượng dự đoán mà model yêu cầu
+    dims: [ 100800, 16 ] 
+  }
+]
+
+instance_group [ { count: 1, kind: KIND_GPU } ]
+dynamic_batching { }
