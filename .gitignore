@@ -6,3 +6,5 @@ __pycache__/
 *.pyc
 new_legible
 __pycache__
+out
+*.pth

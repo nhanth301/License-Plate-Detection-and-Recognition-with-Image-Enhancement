@@ -1,0 +1,11 @@
+person
+motorbike
+bicycle
+face
+square license plate
+rectangle license plate
+car
+truck
+van
+bus
+delivery tricycle
