@@ -251,7 +251,7 @@ class UpScaling(nn.Module):
 
 class LPSR(nn.Module):
     def __init__(
-        self, num_channels, num_features, growth_rate, num_blocks, num_layers, scale_factor
+        self, num_channels, num_features, growth_rate, num_blocks, num_layers, scale_factor, out_channels=1
     ):
         super().__init__()
         self.auto_encoder = AutoEncoder(num_channels, num_channels)
@@ -261,7 +261,7 @@ class LPSR(nn.Module):
         # self.upscale = UpScaling(num_features, scale_factor)
         self.final_conv = nn.Conv2d(
             in_channels=num_features,
-            out_channels=1,
+            out_channels=out_channels,
             kernel_size=3,
             padding=1,
         )
