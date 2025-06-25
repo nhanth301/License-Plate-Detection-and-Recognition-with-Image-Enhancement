@@ -1,0 +1,12 @@
+python -m train.lpsr \
+    --hr_train_dir /home/nhan/Downloads/archive/output_dataset/train/hr \
+    --lr_train_dir /home/nhan/Downloads/archive/output_dataset/train/lr \
+    --hr_val_dir /home/nhan/Downloads/archive/output_dataset/test/hr \
+    --lr_val_dir /home/nhan/Downloads/archive/output_dataset/test/lr \
+    --output_dir output \
+    --epochs 100 \
+    --batch_size 16 \
+    --num_workers 4 \
+    --lr 0.0001 \
+    --width 192 \
+    --height 32 
