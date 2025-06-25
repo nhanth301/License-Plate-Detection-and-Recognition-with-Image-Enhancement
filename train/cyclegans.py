@@ -10,7 +10,7 @@ from my_models.cycle_gans import Discriminator, Generator
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 from my_utils.utils import ImagePool
-
+from my_models.lpsr import LPSR
 
 def weights_init(m):
     classname = m.__class__.__name__
@@ -30,7 +30,8 @@ def train(args):
         os.makedirs(args.output_dir)
 
     netG_AtoB = Generator().to(device)
-    netG_BtoA = Generator().to(device)
+    # netG_BtoA = Generator().to(device)
+    netG_BtoA= LPSR(num_channels=3, num_features=32, growth_rate=16, num_blocks=4, num_layers=4, scale_factor=None).to(device)
     netD_A = Discriminator().to(device)
     netD_B = Discriminator().to(device)
 
