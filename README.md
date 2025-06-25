@@ -37,7 +37,7 @@ This project introduces a **Hybrid Degradation Pipeline** to generate more reali
 
 ## Methodology
 
-The project workflow consists of three main stages: data generation, SR model training, and evaluation.
+The project workflow consists of two main stages: data generation, SR model training.
 
 ### 1. Realistic Data Degradation Pipeline
 
