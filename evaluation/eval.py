@@ -13,17 +13,12 @@ from PIL import Image
 from tqdm import tqdm
 import Levenshtein
 from torchvision import transforms
-
-try:
-    from my_models.lpsr import LPSR
-    from my_models.detection import Detection
-    from my_utils.utils import sort_license_plate_detections
-except ImportError as e:
-    logger.error(f"Import Error: {e}. Please ensure project_models and my_utils are accessible.")
-    sys.exit(1)
+from my_models.lpsr import LPSR
+from my_models.detection import Detection
+from my_utils.utils import sort_license_plate_detections
 
 
-# --- Helper Functions ---
+
 
 def get_ground_truth_from_filename(filename: str) -> str:
     """Extracts the ground truth license plate text from the image filename."""
@@ -58,7 +53,6 @@ def run_ocr(model: Detection, image: np.ndarray) -> str:
     return "".join([char_name.upper() for char_name, _, _ in sorted_chars])
 
 
-# --- Main Evaluation Logic ---
 
 def parse_arguments() -> argparse.Namespace:
     """Parses command-line arguments for the evaluation script."""

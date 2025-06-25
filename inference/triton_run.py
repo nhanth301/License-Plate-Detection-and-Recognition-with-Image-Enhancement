@@ -16,19 +16,12 @@ import tritonclient.http as httpclient
 from tritonclient.utils import np_to_triton_dtype
 import torchvision.transforms as transforms
 
-# --- Assumed imports from your project structure ---
-# Make sure these paths are correct for your project
-try:
-    # Adding yolov5 to path to find its utils
-    sys.path.append(os.path.abspath('./yolov5'))
-    from utils.augmentations import letterbox
-    from utils.general import non_max_suppression
+sys.path.append(os.path.abspath('./yolov5'))
+from utils.augmentations import letterbox
+from utils.general import non_max_suppression
 
-    # Assuming your own utils are in a discoverable path, e.g., in a 'my_utils' folder
-    from my_utils.utils import sort_license_plate_detections, straighten_license_plate
-except ImportError as e:
-    logger.error(f"Import Error: {e}. Please ensure yolov5 and my_utils are in the project structure.")
-    sys.exit(1)
+from my_utils.utils import sort_license_plate_detections, straighten_license_plate
+
 
 
 # --- File I/O and Image Utilities ---

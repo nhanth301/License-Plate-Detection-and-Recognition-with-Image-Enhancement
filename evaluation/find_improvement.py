@@ -12,16 +12,12 @@ import torch
 from loguru import logger
 from PIL import Image
 import matplotlib.pyplot as plt
-
-# --- Assumed imports from your project structure ---
-try:
-    from my_models.lpsr import LPSR
-    from my_models.detection import Detection
-    from my_utils.utils import sort_license_plate_detections
-except ImportError as e:
-    logger.error(f"Import Error: {e}. Please ensure project_models and my_utils are accessible.")
-    sys.exit(1)
 from torchvision import transforms
+
+from my_models.lpsr import LPSR
+from my_models.detection import Detection
+from my_utils.utils import sort_license_plate_detections
+
 
 # --- Helper Functions ---
 
