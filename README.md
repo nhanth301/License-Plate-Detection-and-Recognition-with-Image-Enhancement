@@ -246,9 +246,21 @@ Below are examples where the Super-Resolution model significantly improved OCR r
 <img src="imgs/sr_convincing_improvements.png" alt="demo">
 
 ## Future Work
-* Optimize the inference speed of the Super-Resolution model.
-* Experiment with different OCR model architectures.
-* Integrate the full pipeline into a complete web or desktop application.
+This project has successfully demonstrated the effectiveness of our Super-Resolution approach. However, there are several exciting directions for future improvement and expansion:
+
+1.  **Unifying into a Single-Stage End-to-End Framework**
+    During the CycleGAN training, we observed that the `G_BtoA` (Blur-to-Clear) generator is, in essence, a Super-Resolution model itself. An interesting future direction would be to merge the data generation and SR training phases into a single, end-to-end process. Instead of using `G_AtoB` solely for offline data generation, the entire system could be trained in one loop where `G_BtoA` serves as the final SR model. The primary challenge of this approach lies in the complexity of balancing multiple, competing loss functions to ensure stable convergence.
+
+2.  **Controllable Degradation with Conditional GANs (cGANs)**
+    The current CycleGAN generates LR images unconditionally, offering limited control over the specific type of degradation produced. A powerful extension would be to evolve this pipeline into a Conditional GAN (cGAN). By providing an additional "style" LR image as a condition alongside the HR input, the model could learn to generate the exact type of blur, noise, or lighting artifact desired. This would not only create a more diverse and realistic training dataset but also serve as an effective method to mitigate mode collapse during GAN training.
+
+3.  **Optimizing the Full Pipeline for Speed (FPS)**
+    This project's primary focus was to prove the efficacy of the SR module. Consequently, the detection and recognition models (YOLOv5) were not optimized for inference speed, resulting in a low end-to-end FPS. Future work could focus on performance optimization, including:
+    * **Utilizing lighter model backbones:** Employing more lightweight YOLOv5 versions (e.g., YOLOv5n, YOLOv5s) for the detection and OCR tasks.
+    * **Applying model optimization techniques:** Using methods such as quantization and pruning to reduce the computational complexity of the models.
+    * **Converting models to TensorRT:** Migrating the optimized models to NVIDIA's TensorRT engine to maximize inference throughput on target GPU hardware.
+    * **Codebase Refactoring:** Refactoring the core pipeline for improved modularity, reducing I/O bottlenecks, and enhancing overall code quality for better maintainability and extensibility.
+    * **Implementing a Multi-threaded/Asynchronous Pipeline:** Parallelizing I/O-bound tasks (like video frame reading) with GPU-bound tasks (model inference). This de-couples the components and can significantly improve overall throughput by ensuring the GPU is never idle.
 
 
 ## Acknowledgements
@@ -258,3 +270,5 @@ The plate detection and Optical Character Recognition (OCR) models used in this 
 * **Source Repository:** [chequanghuy/Character-Time-series-Matching](https://github.com/chequanghuy/Character-Time-series-Matching)
 
 We would like to thank the author for their valuable work and for sharing a helpful project for the license plate recognition task in the Vietnamese context.
+
+Additionally, a special thanks to the AI assistants, including Google's Gemini and OpenAI's ChatGPT, which were instrumental throughout the development process. Their assistance in debugging complex errors, refactoring code, and writing documentation was invaluable.
