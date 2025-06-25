@@ -30,8 +30,8 @@ def train(args):
         os.makedirs(args.output_dir)
 
     netG_AtoB = Generator().to(device)
-    # netG_BtoA = Generator().to(device)
-    netG_BtoA= LPSR(num_channels=3, num_features=32, growth_rate=16, num_blocks=4, num_layers=4, scale_factor=None, out_channels=3).to(device)
+    netG_BtoA = Generator().to(device)
+    # netG_BtoA= LPSR(num_channels=3, num_features=32, growth_rate=16, num_blocks=4, num_layers=4, scale_factor=None, out_channels=3).to(device)
     netD_A = Discriminator().to(device)
     netD_B = Discriminator().to(device)
 
