@@ -52,7 +52,7 @@ To address the data scarcity problem, we propose a novel method for generating r
 * **Enhancing Original HR Images with Real-ESRGAN:** The purpose of this step is to "clean" and enhance the image quality, producing an ultra-sharp **"HR+"** version. This "HR+" image then serves as the definitive ground truth for our degradation pipeline in the next step.
 <img src="imgs/realsr.png" alt="demo"/>
 
-* **Hybrid Degradation Synthesis:** From a single HR input image, we generate its corresponding LR counterpart by randomly applying one of the following degradation methods:
+* **Hybrid Degradation Synthesis:** From a single "HR+" input image, we generate its corresponding LR counterpart through a stochastic pipeline. For each image, we apply a **random combination and sequence** of degradations drawn from our toolbox, which includes:
     1.  Traditional manual transformations (Gaussian blur, noise, compression artifacts,...).
     2.  The trained `G_AtoB` LR Generator from our CycleGAN.
     3.  Convolution with one of the estimated real-world blur kernels.
