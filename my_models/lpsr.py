@@ -271,4 +271,4 @@ class LPSR(nn.Module):
         x = self.rdn(x)
         # x = self.upscale(x)
         x = self.final_conv(x)
-        return torch.sigmoid(x)
+        return torch.tanh(x)
