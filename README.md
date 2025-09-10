@@ -6,9 +6,6 @@ This project presents a complete pipeline for license plate super-resolution, da
 <img src="imgs/image.png" alt="demo"/>
 
 
-<img src="research/degradation_modeling.png" alt="survey paper"/>
-<p align="center"><em>Survey Paper</em></p>
-
 ---
 
 ## Table of Contents
