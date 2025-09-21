@@ -8,6 +8,10 @@ This project presents a complete pipeline for license plate super-resolution, da
 
 ---
 
+## Proposed Method
+
+<img src="imgs/lpsr.png" alt="Proposed Method" />
+
 ## Table of Contents
 - [Introduction](#introduction)
 - [Methodology](#methodology)
